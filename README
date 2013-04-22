@@ -1,0 +1,18 @@
+								libfly
+
+What is libfly?
+
+	libfly is a C library which strive to be simple way of doing parallel
+	tasks.
+
+Supported parallel patterns:
+
+	Simple parallel_for:
+	int parallel_for(int count, fly_parallel_for_func func, void *ptr);
+	Run func, count number of times with parameters index and ptr.
+
+	Simple parallel_for_arr:
+	int fly_parallel_for_arr(int start, int end, fly_parallel_for_func func,
+			void *arr, size_t elsize);
+	Run func,  (end - start) number of times with parameters index and
+		arr[index].
