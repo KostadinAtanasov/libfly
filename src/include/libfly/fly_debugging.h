@@ -34,9 +34,9 @@
 
 static inline void fly_do_log(const char *subsys, const char *msg)
 {
-	printf(subsys);
+	printf("%s", subsys);
 	printf(" ");
-	printf(msg);
+	printf("%s", msg);
 	printf("\n");
 }
 
