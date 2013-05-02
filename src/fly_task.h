@@ -1,5 +1,5 @@
 /******************************************************************************
- * fly_error.h
+ * fly_task.h
  *
  * Copyright (C) 2013 Kostadin Atanasov <pranayama111@gmail.com>
  *
@@ -19,20 +19,16 @@
  * along with libfly. If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#ifndef LIBFLY_FLY_ERROR_H
-#define LIBFLY_FLY_ERROR_H
+#ifndef LIBFLY_FLY_TASK_H
+#define LIBFLY_FLY_TASK_H
 
-enum fly_errors {
-	FLYESUCCESS = 0,
-	FLYENORES = 1, /* No enough resources for the operation */
+struct fly_task {
+	fly_task_func	func;
+	void			*param;
+	void			*result;
 
-	FLYEATTR,
+	/* data used by scheduler to identify this task */
+	void			*sched_data;
+}; /* struct fly_task */
 
-	FLYELLLIB, /* Low level library failed */
-
-	FLYENOIMP
-}; /* enum fly_errors */
-
-#define FLY_SUCCEEDED(_errcode) (_errcode == FLYESUCCESS)
-
-#endif /* LIBFLY_FLY_ERROR_H */
+#endif /* LIBFLY_FLY_TASK_H */

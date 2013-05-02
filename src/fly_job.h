@@ -42,7 +42,8 @@ struct fly_job {
 	volatile int		batches_done;
 
 	union {
-		fly_parallel_for_func   pfor;
+		fly_parallel_for_func	pfor;
+		fly_task_func			tfunc;
 	}					func;
 
 	void				*data;
@@ -65,6 +66,7 @@ struct fly_job *fly_create_job_pfor(int count, fly_parallel_for_func func,
 		void *ptr);
 struct fly_job *fly_create_job_pfarr(int start, int end,
 		fly_parallel_for_func func, void *data, size_t elsize);
+struct fly_job *fly_create_job_task(struct fly_task *task);
 void fly_destroy_job(struct fly_job *job);
 int fly_wait_job(struct fly_job *job);
 int fly_make_batches(struct fly_job *job, int nbbatches);

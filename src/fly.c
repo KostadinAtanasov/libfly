@@ -22,6 +22,7 @@
 #include <libfly/fly.h>
 #include "fly_sched.h"
 #include "fly_job.h"
+#include "fly_task.h"
 #include "fly_memdebug.h"
 
 #include <stdlib.h>
@@ -80,6 +81,9 @@ int fly_uninit()
 	return err;
 }
 
+/******************************************************************************
+ * Parallel for parallelism
+ *****************************************************************************/
 int fly_parallel_for(int count, fly_parallel_for_func func, void *ptr)
 {
 	int err = FLYENORES;
@@ -103,6 +107,62 @@ int fly_parallel_for_arr(int start, int end, fly_parallel_for_func func,
 		if (FLY_SUCCEEDED(err))
 			err = fly_wait_job(job);
 		fly_destroy_job(job);
+	}
+	return err;
+}
+
+/******************************************************************************
+ * Task parallelism
+ *****************************************************************************/
+struct fly_task *fly_create_task(fly_task_func func, void *param)
+{
+	struct fly_task *task = fly_malloc(sizeof(struct fly_task));
+	task->func = func;
+	task->param = param;
+	task->sched_data = NULL;
+	return task;
+}
+
+void fly_destroy_task(struct fly_task *task)
+{
+	fly_free(task);
+}
+
+int fly_push_task(struct fly_task *task)
+{
+	int err = FLYENORES;
+	struct fly_job *job = fly_create_job_task(task);
+	if (job) {
+		task->sched_data = job;
+		err = fly_sched_add_job(job);
+		if (!FLY_SUCCEEDED(err)) {
+			task->sched_data = NULL;
+			fly_destroy_job(job);
+		}
+	}
+	return err;
+}
+
+int fly_wait_task(struct fly_task *task)
+{
+	int err = FLYEATTR;
+	if (task->sched_data) {
+		struct fly_job *job = task->sched_data;
+		err = fly_wait_job(job);
+		if (FLY_SUCCEEDED(err))
+			fly_destroy_job(job);
+	}
+	return err;
+}
+
+int fly_wait_tasks(struct fly_task **tasks, int nbtasks)
+{
+	int i;
+	int err = FLYESUCCESS;
+	for (i = 0; i < nbtasks; i++) {
+		int tmp = fly_wait_task(tasks[i]);
+		if (!FLY_SUCCEEDED(tmp))
+			err = tmp;
 	}
 	return err;
 }

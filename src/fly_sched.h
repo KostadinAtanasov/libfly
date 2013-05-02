@@ -37,6 +37,7 @@ struct fly_job;
  ****************************************************************************/
 #define FLY_TASK_PARALLEL_FOR		1
 #define FLY_TASK_PARALLEL_FOR_ARR	2
+#define FLY_TASK_TASK				3
 
 struct fly_sched {
 	struct fly_worker		*workers;
@@ -59,6 +60,7 @@ int fly_sched_init();
 int fly_sched_uninit();
 
 int fly_sched_add_job(struct fly_job *job);
+int fly_sched_job_collected(struct fly_job *job);
 
 void fly_schedule(struct fly_worker *worker);
 

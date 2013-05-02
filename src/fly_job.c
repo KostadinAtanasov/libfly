@@ -22,9 +22,10 @@
 #include "fly_job.h"
 #include "fly_globals.h"
 #include "fly_sched.h"
+#include "fly_task.h"
 #include "fly_atomic.h"
 
-#include <assert.h>
+#include <semaphore.h>
 
 /******************************************************************************
  * Helper functions declarations.
@@ -85,6 +86,26 @@ struct fly_job *fly_create_job_pfarr(int start, int end,
 	return job;
 }
 
+struct fly_job *fly_create_job_task(struct fly_task *task)
+{
+	struct fly_job *job = fly_malloc(sizeof(struct fly_job));
+	if (job) {
+		if (sem_init(&job->sem, 0, 0) == 0) {
+			job->data = task;
+			job->state = FLY_JOB_IDLE;
+			fly_list_init(&job->batches);
+			job->func.tfunc = task->func;
+			job->nbbatches = 1;
+			job->batches_done = 0;
+			job->jtype = FLY_TASK_TASK;
+		} else {
+			fly_free(job);
+			job = NULL;
+		}
+	}
+	return job;
+}
+
 void fly_destroy_job(struct fly_job *job)
 {
 	if (job) {
@@ -102,7 +123,11 @@ void fly_destroy_job(struct fly_job *job)
 int fly_wait_job(struct fly_job *job)
 {
 	fly_assert(job, "fly_job_wait NULL job");
-	return sem_wait(&job->sem);
+	if (sem_wait(&job->sem) == 0) {
+		fly_sched_job_collected(job);
+		return FLYESUCCESS;
+	}
+	return FLYELLLIB;
 }
 
 int fly_make_batches(struct fly_job *job, int nbbatches)

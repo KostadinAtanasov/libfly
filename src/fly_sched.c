@@ -24,6 +24,7 @@
 #include "fly_globals.h"
 #include "fly_worker.h"
 #include "fly_job.h"
+#include "fly_task.h"
 #include "fly_atomic.h"
 
 /******************************************************************************
@@ -118,13 +119,20 @@ int fly_sched_uninit()
 /******************************************************************************
  * Add job implementations
  *****************************************************************************/
+static inline int fly_sched_add_to_ready(struct fly_job *job)
+{
+	int err;
+	fly_mrswlock_wlock(&fly_sched.ready_lock);
+	err = fly_list_append(&fly_sched.ready_jobs, job);
+	fly_mrswlock_wunlock(&fly_sched.ready_lock);
+	return err;
+}
+
 static int fly_sched_add_pfj(struct fly_job *job)
 {
 	int err = fly_make_batches(job, fly_sched.nbworkers);
 	if (FLY_SUCCEEDED(err)) {
-		fly_mrswlock_wlock(&fly_sched.ready_lock);
-		err = fly_list_append(&fly_sched.ready_jobs, job);
-		fly_mrswlock_wunlock(&fly_sched.ready_lock);
+		err = fly_sched_add_to_ready(job);
 		if (!FLY_SUCCEEDED(err)) {
 			fly_destroy_batches(job);
 			return err;
@@ -139,6 +147,8 @@ int fly_sched_add_job(struct fly_job *job)
 	if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
 			(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
 		err = fly_sched_add_pfj(job);
+	} else if(job->jtype == FLY_TASK_TASK) {
+		err = fly_sched_add_to_ready(job);
 	}
 	if (FLY_SUCCEEDED(err)) {
 		int i;
@@ -146,6 +156,14 @@ int fly_sched_add_job(struct fly_job *job)
 			sem_post(&fly_sched.workers[i].sem);
 	}
 	return err;
+}
+
+int fly_sched_job_collected(struct fly_job *job)
+{
+	fly_mrswlock_wlock(&fly_sched.done_lock);
+	fly_list_remove(&fly_sched.done_jobs, job);
+	fly_mrswlock_wunlock(&fly_sched.done_lock);
+	return FLYESUCCESS;
 }
 
 static void fly_pfarrj_exec(struct fly_job *job)
@@ -175,6 +193,12 @@ static void fly_pfptrj_exec(struct fly_job *job)
 		}
 		fly_atomic_inc(&job->batches_done, 1);
 	}
+}
+
+static void fly_taskjob_exec(struct fly_job *job)
+{
+	struct fly_task *task = job->data;
+	task->result = task->func(task->param);
 }
 
 static struct fly_job *fly_sched_get_ready()
@@ -243,6 +267,10 @@ void fly_schedule(struct fly_worker *w)
 				if (&fly_sched.workers[i] != w)
 					sem_post(&fly_sched.workers[i].sem);
 			}
+		} else if (job->jtype == FLY_TASK_TASK) {
+			/* prevents other threads to get this job as running */
+			job->batches_done = job->nbbatches;
+			fly_sched_move_to_running(job);
 		} else {
 			fly_assert(0, "fly_schedule unsupported job type");
 		}
@@ -256,6 +284,8 @@ void fly_schedule(struct fly_worker *w)
 			fly_pfptrj_exec(job);
 		} else if (job->jtype == FLY_TASK_PARALLEL_FOR_ARR) {
 			fly_pfarrj_exec(job);
+		} else if (job->jtype == FLY_TASK_TASK) {
+			fly_taskjob_exec(job);
 		}
 
 		if (fly_atomic_cas(&job->batches_done, nbbatches, nbbatches)) {
