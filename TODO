@@ -1,6 +1,6 @@
 ====== libfly TODO ======
 
-[ ] Simple tasks support.
+[*] Simple tasks support.
 
 [ ] Have backup threads(instead of number of cores double that, but the
 	backup threads just sleep, only if main threads are blocked backups
