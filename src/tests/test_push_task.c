@@ -25,8 +25,28 @@
 #include <stdio.h> /* for sprintf */
 #include <unistd.h> /* for sysconf */
 
-#define NBTASKS			2
-#define LOG_LOOP_SIZE	50000000
+/******************************************************************************
+ * Profiling stuff
+ *****************************************************************************/
+#include <sys/time.h>
+static inline double get_time_in_usec()
+{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return (tv.tv_sec * 1000000.0) + tv.tv_usec;
+}
+
+static inline double get_time_diff_in_usec(double prevtime)
+{
+	double nowtime = get_time_in_usec();
+	return nowtime - prevtime;
+}
+/******************************************************************************
+ * End of profiling stuff
+ *****************************************************************************/
+
+#define NBTASKS			256
+#define LOG_LOOP_SIZE	5000000
 #define LOG_PRECISION	0.001f
 
 static float nat_log(float num)
@@ -98,6 +118,10 @@ int main(int argc, char **argv)
 {
 	int					errcode;
 	long				nbcpus;
+	double				timestart;
+	double				timedelta;
+	double				olddelta;
+	char				msg[256] = {0};
 
 	int					counter;
 	struct fly_task		*tasks[NBTASKS];
@@ -113,6 +137,8 @@ int main(int argc, char **argv)
 	errcode = fly_simple_init(nbcpus);
 	fly_assert(FLY_SUCCEEDED(errcode), "fly_simple_init failed");
 
+	/* start task profiling - including tasks creation */
+	timestart = get_time_in_usec();
 	for (counter = 0; counter < NBTASKS; counter++) {
 		tasks[counter] = fly_create_task(task_func, &task_params[counter]);
 		if (!tasks[counter]) {
@@ -136,11 +162,26 @@ int main(int argc, char **argv)
 	}
 
 	errcode = fly_wait_tasks(tasks, NBTASKS);
+	timedelta = get_time_diff_in_usec(timestart);
+	sprintf(msg, "tasks execution took:\t\t%f us", timedelta);
+	fly_log("[test_push_task]", msg);
+	(void)errcode;
 	fly_assert(FLY_SUCCEEDED(errcode), "flay_wait_tasks return error");
 	clean_tasks(tasks, NBTASKS);
 
 	validate_log(task_params, NBTASKS);
 	/* TODO: test and waiting for single task e.g. fly_wait_task */
+
+	olddelta = timedelta;
+	timestart = get_time_in_usec();
+	for (counter = 0; counter < NBTASKS; counter++) {
+		task_func(&task_params[counter]);
+	}
+	timedelta = get_time_diff_in_usec(timestart);
+	sprintf(msg, "for loop execution took:\t%f us", timedelta);
+	fly_log("[test_push_task]", msg);
+	sprintf(msg, "speed bump:\t\t\t%f", timedelta / olddelta);
+	fly_log("[test_push_task]", msg);
 
 	/* shutdown libfly */
 	errcode = fly_uninit();
