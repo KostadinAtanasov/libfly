@@ -25,13 +25,13 @@
 #include <stdio.h> /* for sprintf */
 #include <unistd.h> /* for sysconf */
 
-#define NBTASKS			256
+#define NBTASKS			2
 #define LOG_LOOP_SIZE	50000000
 #define LOG_PRECISION	0.001f
 
 static float nat_log(float num)
 {
-	float res = ((num - 1) * (num - 1)) / ((num + 1) * (num + 1));
+	float res = (num - 1) / (num + 1);
 	float curr = res;
 	float mult = res * res;
 	int i;
@@ -58,7 +58,7 @@ static void init_data(struct task_param *arr, int count)
 {
 	int i;
 	for (i = 0; i < count; i++)
-		arr[i].num = i;
+		arr[i].num = (float)i + 0.5f;
 }
 
 static void clean_tasks(struct fly_task **tasks, int count)
