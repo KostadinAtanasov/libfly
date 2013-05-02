@@ -58,5 +58,6 @@ void fly_destroy_task(struct fly_task *task);
 int fly_push_task(struct fly_task *task);
 int fly_wait_task(struct fly_task *task);
 int fly_wait_tasks(struct fly_task **tasks, int nbtasks);
+void *fly_get_task_result(struct fly_task *task);
 
 #endif /* LIBFLY_FLY_H */

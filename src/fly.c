@@ -166,3 +166,8 @@ int fly_wait_tasks(struct fly_task **tasks, int nbtasks)
 	}
 	return err;
 }
+
+void *fly_get_task_result(struct fly_task *task)
+{
+	return task->result;
+}
