@@ -47,4 +47,16 @@ int fly_parallel_for(int count, fly_parallel_for_func func, void *ptr);
 int fly_parallel_for_arr(int start, int end, fly_parallel_for_func func,
 		void *arr, size_t elsize);
 
+/******************************************************************************
+ * Task parallelism
+ *****************************************************************************/
+typedef void *(*fly_task_func)(void*);
+struct fly_task;
+
+struct fly_task *fly_create_task(fly_task_func func, void *param);
+void fly_destroy_task(struct fly_task *task);
+int fly_push_task(struct fly_task *task);
+int fly_wait_task(struct fly_task *task);
+int fly_wait_tasks(struct fly_task **tasks, int nbtasks);
+
 #endif /* LIBFLY_FLY_H */
