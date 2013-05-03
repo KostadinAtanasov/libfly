@@ -23,6 +23,7 @@
 #define FLY_WORKER_H
 
 #include "fly_list.h"
+#include "fly_thread.h"
 
 #include <pthread.h>
 #include <unistd.h>
@@ -37,8 +38,7 @@ typedef int fly_worker_state;
 
 struct fly_worker {
 	fly_worker_state	tstate;
-	pthread_t			pthread;
-	pthread_attr_t		*attr;
+	struct fly_thread	mainthread;
 	sem_t				sem;
 }; /* fly_worker */
 

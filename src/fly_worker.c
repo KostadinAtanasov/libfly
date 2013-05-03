@@ -45,36 +45,19 @@ void* fly_worker_func(void *worker)
 int fly_worker_init(struct fly_worker *worker)
 {
 	int err = FLYESUCCESS;
-
 	memset(worker, 0, sizeof(struct fly_worker));
-
-	worker->attr = fly_malloc(sizeof(pthread_attr_t));
-	if (!worker->attr) {
-		err = FLYENORES;
-		goto OnError;
-	}
-
-	if (pthread_attr_init(worker->attr) != 0) {
-		err = FLYEATTR;
-		goto OnError;
-	}
-
+	err = fly_thread_init(&worker->mainthread, fly_worker_func, worker);
+	if (!FLY_SUCCEEDED(err))
+		return err;
 	err = sem_init(&worker->sem, 0, 0);
 	if (err) {
 		err = FLYENORES;
-		goto OnError;
+		fly_thread_uninit(&worker->mainthread);
 	}
 
 	worker->tstate = FLY_WORKER_IDLE;
 
 	return err;
-	OnError:
-		if (worker->attr) {
-			pthread_attr_destroy(worker->attr);
-			fly_free(worker->attr);
-			worker->attr = NULL;
-		}
-		return err;
 }
 
 int fly_worker_uninit(struct fly_worker *worker)
@@ -87,10 +70,7 @@ int fly_worker_uninit(struct fly_worker *worker)
 	}
 
 	if (FLY_SUCCEEDED(err)) {
-		if (worker->attr) {
-			pthread_attr_destroy(worker->attr);
-			fly_free(worker->attr);
-		}
+		fly_thread_uninit(&worker->mainthread);
 		sem_destroy(&worker->sem);
 	}
 	return err;
@@ -99,8 +79,7 @@ int fly_worker_uninit(struct fly_worker *worker)
 int fly_worker_start(struct fly_worker *worker)
 {
 	int ret;
-	ret = pthread_create(&worker->pthread, worker->attr,
-		fly_worker_func, worker);
+	ret = fly_thread_start(&worker->mainthread);
 	if (ret == 0)
 		worker->tstate = FLY_WORKER_RUNNING;
 	return ret;
@@ -114,6 +93,5 @@ void fly_worker_request_exit(struct fly_worker *worker)
 
 int fly_worker_wait(struct fly_worker *worker)
 {
-	pthread_join(worker->pthread, NULL);
-	return FLYESUCCESS;
+	return fly_thread_wait(&worker->mainthread);
 }
