@@ -65,7 +65,7 @@ int fly_thread_uninit(struct fly_thread *thread)
 	return FLYESUCCESS;
 }
 
-int fly_start_thread(struct fly_thread *thread)
+int fly_thread_start(struct fly_thread *thread)
 {
 	int ret;
 	ret = pthread_create(&thread->pthread, thread->attr,

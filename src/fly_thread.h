@@ -41,7 +41,7 @@ struct fly_thread {
 int fly_thread_init(struct fly_thread *thread,
 		fly_thread_func func, void *param);
 int fly_thread_uninit(struct fly_thread *thread);
-int fly_start_thread(struct fly_thread *thread);
+int fly_thread_start(struct fly_thread *thread);
 
 int fly_thread_wait(struct fly_thread *thread);
 
