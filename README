@@ -16,3 +16,12 @@ Supported parallel patterns:
 			void *arr, size_t elsize);
 	Run func,  (end - start) number of times with parameters index and
 		arr[index].
+
+	Task pushing:
+	int fly_push_task(struct fly_task *task);
+	Run task asynchronously on some thread in some time.
+
+	int fly_wait_task(struct fly_task *task);
+	Wait previously pushed task to finish.
+
+	void *fly_get_task_result(struct fly_task *task);
