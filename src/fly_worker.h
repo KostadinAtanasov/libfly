@@ -39,7 +39,6 @@ struct fly_worker {
 	fly_worker_state	tstate;
 	pthread_t			pthread;
 	pthread_attr_t		*attr;
-	struct fly_task		*task;
 	sem_t				sem;
 }; /* fly_worker */
 

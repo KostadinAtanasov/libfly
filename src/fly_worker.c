@@ -66,7 +66,6 @@ int fly_worker_init(struct fly_worker *worker)
 	}
 
 	worker->tstate = FLY_WORKER_IDLE;
-	worker->task = NULL;
 
 	return err;
 	OnError:
