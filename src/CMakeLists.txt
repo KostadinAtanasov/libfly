@@ -4,9 +4,10 @@ cmake_minimum_required(VERSION 2.6)
 # Project source files...
 set(fly_SRCS
 	fly.c
-	fly_sched.c
-	fly_worker.c
 	fly_job.c
+	fly_sched.c
+	fly_thread.c
+	fly_worker.c
 	)
 
 # Compilation flags
