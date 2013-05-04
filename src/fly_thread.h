@@ -27,15 +27,26 @@
 
 typedef void *(*fly_thread_func)(void*);
 
-struct fly_thread {
-	pthread_t			pthread;
-	pthread_attr_t		*attr;
+enum fly_thread_state {
+	FLY_THREAD_IDLE				= 0x01,
+	FLY_THREAD_RUNNING			= 0x02,
+	FLY_THREAD_SLEEP			= 0x04,
+	FLY_THREAD_CLIENT_RUNNING	= 0x08,
+	FLY_THREAD_CLIENT_ISLEEP	= 0x10,	/* interruptable sleep(mutex, etc) */
+	FLY_THREAD_CLIENT_USLEEP	= 0x20	/* uninterruptable sleep(IO) */
+}; /* enum fly_thread_state */
 
-	fly_thread_func		func;
-	void				*param;
+struct fly_thread {
+	pthread_t				pthread;
+	pthread_attr_t			*attr;
+
+	fly_thread_func			func;
+	void					*param;
+
+	enum fly_thread_state	state;
 
 	/* thread id given by the OS */
-	pid_t				tid;
+	pid_t					tid;
 }; /* struct fly_thread */
 
 int fly_thread_init(struct fly_thread *thread,

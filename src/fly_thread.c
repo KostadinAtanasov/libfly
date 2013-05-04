@@ -34,6 +34,7 @@ static void *fly_thread_wrap_func(void *_thread)
 	struct fly_thread *thread = (struct fly_thread*)_thread;
 
 	thread->tid = syscall(SYS_gettid);
+	thread->state = FLY_THREAD_RUNNING;
 
 	return thread->func(thread->param);
 }
@@ -49,6 +50,7 @@ int fly_thread_init(struct fly_thread *thread,
 		if (pthread_attr_init(thread->attr) == 0) {
 			thread->func = func;
 			thread->param = param;
+			thread->state = FLY_THREAD_IDLE;
 			return FLYESUCCESS;
 		} else {
 			fly_free(thread->attr);
