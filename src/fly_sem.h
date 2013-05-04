@@ -1,5 +1,5 @@
 /******************************************************************************
- * fly_worker.h
+ * fly_sem.h
  *
  * Copyright (C) 2013 Kostadin Atanasov <pranayama111@gmail.com>
  *
@@ -19,41 +19,44 @@
  * along with libfly. If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#ifndef FLY_WORKER_H
-#define FLY_WORKER_H
+#ifndef LIBFLY_FLY_SEM_H
+#define LIBFLY_FLY_SEM_H
 
-#include "fly_list.h"
 #include "fly_thread.h"
-#include "fly_sem.h"
 
-#include <pthread.h>
-#include <unistd.h>
-#include <time.h>
+#include <semaphore.h>
 
-typedef int fly_worker_state;
-#define FLY_WORKER_IDLE		0
-#define FLY_WORKER_RUNNING	1
-#define FLY_WORKER_EXITING	2
-#define FLY_WORKER_FINISHED	3
+struct fly_sem {
+	sem_t	sem;
+}; /* struct fly_sem */
 
-struct fly_worker {
-	fly_worker_state	tstate;
-	struct fly_thread	mainthread;
-	struct fly_sem		sem;
-}; /* fly_worker */
-
-int fly_worker_init(struct fly_worker *worker);
-int fly_worker_uninit(struct fly_worker *worker);
-int fly_worker_start(struct fly_worker *worker);
-void fly_worker_request_exit(struct fly_worker *worker);
-int fly_worker_wait(struct fly_worker *worker);
-
-static inline void fly_thread_sleep(unsigned int nanosec)
+static inline int fly_sem_init(struct fly_sem *sem)
 {
-	struct timespec delay;
-	delay.tv_sec = nanosec / 1000000000;
-	delay.tv_nsec = nanosec % 1000000000;
-	nanosleep(&delay, NULL);
+	return sem_init(&sem->sem, 0, 0);
 }
 
-#endif /* FLY_WORKER_H */
+static inline int fly_sem_uninit(struct fly_sem *sem)
+{
+	return sem_destroy(&sem->sem);
+}
+
+static inline int fly_sem_wait(struct fly_sem *sem, struct fly_thread *thread)
+{
+	int err;
+	thread->state = FLY_THREAD_SLEEP;
+	err = sem_wait(&sem->sem);
+	thread->state = FLY_THREAD_RUNNING;
+	return err;
+}
+
+static inline int fly_sem_notrack_wait(struct fly_sem *sem)
+{
+	return sem_wait(&sem->sem);
+}
+
+static inline int fly_sem_post(struct fly_sem *sem)
+{
+	return sem_post(&sem->sem);
+}
+
+#endif /* LIBFLY_FLY_SEM_H */

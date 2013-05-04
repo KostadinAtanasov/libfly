@@ -25,8 +25,6 @@
 #include "fly_task.h"
 #include "fly_atomic.h"
 
-#include <semaphore.h>
-
 /******************************************************************************
  * Helper functions declarations.
  *****************************************************************************/
@@ -41,7 +39,7 @@ struct fly_job *fly_create_job_pfor(int count, fly_parallel_for_func func,
 {
 	struct fly_job *job = fly_malloc(sizeof(struct fly_job));
 	if (job) {
-		if (sem_init(&job->sem, 0, 0) == 0) {
+		if (fly_sem_init(&job->sem) == 0) {
 			job->data = ptr;
 			job->start = 0;
 			job->end = count;
@@ -66,7 +64,7 @@ struct fly_job *fly_create_job_pfarr(int start, int end,
 	if ((end - start) > 0) {
 		job = fly_malloc(sizeof(struct fly_job));
 		if (job) {
-			if (sem_init(&job->sem, 0, 0) == 0) {
+			if (fly_sem_init(&job->sem) == 0) {
 				job->data = data;
 				job->elsize = elsize;
 				job->start = start;
@@ -90,7 +88,7 @@ struct fly_job *fly_create_job_task(struct fly_task *task)
 {
 	struct fly_job *job = fly_malloc(sizeof(struct fly_job));
 	if (job) {
-		if (sem_init(&job->sem, 0, 0) == 0) {
+		if (fly_sem_init(&job->sem) == 0) {
 			job->data = task;
 			job->state = FLY_JOB_IDLE;
 			fly_list_init(&job->batches);
@@ -115,7 +113,7 @@ void fly_destroy_job(struct fly_job *job)
 			job_remove_batch(job, batch);
 			job_destroy_batch(batch);
 		}
-		sem_destroy(&job->sem);
+		fly_sem_uninit(&job->sem);
 		fly_free(job);
 	}
 }
@@ -123,7 +121,11 @@ void fly_destroy_job(struct fly_job *job)
 int fly_wait_job(struct fly_job *job)
 {
 	fly_assert(job, "fly_job_wait NULL job");
-	if (sem_wait(&job->sem) == 0) {
+	/*
+	 * TODO:
+	 * Add variant to know if we wait from fly_thread so it could be tracked.
+	 */
+	if (fly_sem_notrack_wait(&job->sem) == 0) {
 		fly_sched_job_collected(job);
 		return FLYESUCCESS;
 	}

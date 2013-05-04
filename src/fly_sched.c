@@ -122,7 +122,7 @@ int fly_sched_uninit()
 static inline int fly_sched_add_to_ready(struct fly_job *job)
 {
 	int err;
-	fly_mrswlock_wlock(&fly_sched.ready_lock);
+	fly_mrswlock_notrack_wlock(&fly_sched.ready_lock);
 	err = fly_list_append(&fly_sched.ready_jobs, job);
 	fly_mrswlock_wunlock(&fly_sched.ready_lock);
 	return err;
@@ -153,14 +153,14 @@ int fly_sched_add_job(struct fly_job *job)
 	if (FLY_SUCCEEDED(err)) {
 		int i;
 		for (i = 0; i < fly_sched.nbworkers; i++)
-			sem_post(&fly_sched.workers[i].sem);
+			fly_sem_post(&fly_sched.workers[i].sem);
 	}
 	return err;
 }
 
 int fly_sched_job_collected(struct fly_job *job)
 {
-	fly_mrswlock_wlock(&fly_sched.done_lock);
+	fly_mrswlock_notrack_wlock(&fly_sched.done_lock);
 	fly_list_remove(&fly_sched.done_jobs, job);
 	fly_mrswlock_wunlock(&fly_sched.done_lock);
 	return FLYESUCCESS;
@@ -201,20 +201,20 @@ static void fly_taskjob_exec(struct fly_job *job)
 	task->result = task->func(task->param);
 }
 
-static struct fly_job *fly_sched_get_ready()
+static struct fly_job *fly_sched_get_ready(struct fly_thread *t)
 {
 	struct fly_job *job;
-	fly_mrswlock_wlock(&fly_sched.ready_lock);
+	fly_mrswlock_wlock(&fly_sched.ready_lock, t);
 	job = fly_list_tail_remove(&fly_sched.ready_jobs);
 	fly_mrswlock_wunlock(&fly_sched.ready_lock);
 	return job;
 }
 
-static struct fly_job *fly_sched_get_running()
+static struct fly_job *fly_sched_get_running(struct fly_thread *t)
 {
 	struct fly_job *job = NULL;
 	struct fly_list *curr;
-	fly_mrswlock_rlock(&fly_sched.running_lock);
+	fly_mrswlock_rlock(&fly_sched.running_lock, t);
 	curr = fly_list_head(&fly_sched.running_jobs);
 	while (curr) {
 		job = curr->el;
@@ -229,9 +229,9 @@ static struct fly_job *fly_sched_get_running()
 	return job;
 }
 
-static void fly_sched_move_to_running(struct fly_job *job)
+static void fly_sched_move_to_running(struct fly_job *job, struct fly_thread *t)
 {
-	fly_mrswlock_wlock(&fly_sched.running_lock);
+	fly_mrswlock_wlock(&fly_sched.running_lock, t);
 	job->state = FLY_JOB_RUNNING;
 	fly_list_append(&fly_sched.running_jobs, job);
 	fly_mrswlock_wunlock(&fly_sched.running_lock);
@@ -239,14 +239,14 @@ static void fly_sched_move_to_running(struct fly_job *job)
 
 static void fly_sched_remove_running(struct fly_job *job)
 {
-	fly_mrswlock_wlock(&fly_sched.running_lock);
+	fly_mrswlock_notrack_wlock(&fly_sched.running_lock);
 	fly_list_remove(&fly_sched.running_jobs, job);
 	fly_mrswlock_wunlock(&fly_sched.running_lock);
 }
 
 static void fly_sched_move_to_done(struct fly_job *job)
 {
-	fly_mrswlock_wlock(&fly_sched.done_lock);
+	fly_mrswlock_notrack_wlock(&fly_sched.done_lock);
 	fly_list_append(&fly_sched.done_jobs, job);
 	fly_mrswlock_wunlock(&fly_sched.done_lock);
 }
@@ -256,26 +256,26 @@ void fly_schedule(struct fly_worker *w)
 	/* TODO:
 	 * Locks are for very short time so consider spinning...
 	 */
-	struct fly_job *job = fly_sched_get_ready();
+	struct fly_job *job = fly_sched_get_ready(&w->mainthread);
 
 	if (job) {
 		if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
 				(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
 			int i;
-			fly_sched_move_to_running(job);
+			fly_sched_move_to_running(job, &w->mainthread);
 			for (i = 0; i < fly_sched.nbworkers; i++) {
 				if (&fly_sched.workers[i] != w)
-					sem_post(&fly_sched.workers[i].sem);
+					fly_sem_post(&fly_sched.workers[i].sem);
 			}
 		} else if (job->jtype == FLY_TASK_TASK) {
 			/* prevents other threads to get this job as running */
 			job->batches_done = job->nbbatches;
-			fly_sched_move_to_running(job);
+			fly_sched_move_to_running(job, &w->mainthread);
 		} else {
 			fly_assert(0, "fly_schedule unsupported job type");
 		}
 	} else {
-		job = fly_sched_get_running();
+		job = fly_sched_get_running(&w->mainthread);
 	}
 
 	if (job) {
@@ -292,12 +292,12 @@ void fly_schedule(struct fly_worker *w)
 			job->state = FLY_JOB_DONE;
 			fly_sched_remove_running(job);
 			fly_sched_move_to_done(job);
-			sem_post(&job->sem);
+			fly_sem_post(&job->sem);
 		}
 		return;
 	}
 
-	sem_wait(&w->sem);
+	fly_sem_wait(&w->sem, &w->mainthread);
 }
 
 /******************************************************************************

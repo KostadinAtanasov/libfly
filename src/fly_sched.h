@@ -23,13 +23,12 @@
 #define FLY_SCHEDULER_H
 
 #include <libfly/fly_error.h>
-#include <libfly/fly_mrswlock.h>
 
+#include "fly_mrswlock.h"
 #include "fly_list.h"
 
 /* Forwards */
 struct fly_worker;
-struct fly_wq;
 struct fly_job;
 
 /*****************************************************************************

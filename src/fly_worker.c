@@ -49,7 +49,7 @@ int fly_worker_init(struct fly_worker *worker)
 	err = fly_thread_init(&worker->mainthread, fly_worker_func, worker);
 	if (!FLY_SUCCEEDED(err))
 		return err;
-	err = sem_init(&worker->sem, 0, 0);
+	err = fly_sem_init(&worker->sem);
 	if (err) {
 		err = FLYENORES;
 		fly_thread_uninit(&worker->mainthread);
@@ -71,7 +71,7 @@ int fly_worker_uninit(struct fly_worker *worker)
 
 	if (FLY_SUCCEEDED(err)) {
 		fly_thread_uninit(&worker->mainthread);
-		sem_destroy(&worker->sem);
+		fly_sem_uninit(&worker->sem);
 	}
 	return err;
 }
@@ -88,7 +88,7 @@ int fly_worker_start(struct fly_worker *worker)
 void fly_worker_request_exit(struct fly_worker *worker)
 {
 	worker->tstate = FLY_WORKER_EXITING;
-	sem_post(&worker->sem);
+	fly_sem_post(&worker->sem);
 }
 
 int fly_worker_wait(struct fly_worker *worker)
