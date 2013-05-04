@@ -33,8 +33,11 @@ enum fly_thread_state {
 	FLY_THREAD_SLEEP			= 0x04,
 	FLY_THREAD_CLIENT_RUNNING	= 0x08,
 	FLY_THREAD_CLIENT_ISLEEP	= 0x10,	/* interruptable sleep(mutex, etc) */
-	FLY_THREAD_CLIENT_USLEEP	= 0x20	/* uninterruptable sleep(IO) */
+	FLY_THREAD_CLIENT_USLEEP	= 0x20,	/* uninterruptable sleep(IO) */
+	FLY_THREAD_TRAPPED			= 0x40	/* signal or debugger stop us */
 }; /* enum fly_thread_state */
+
+#define FLY_THREAD_CLEAR_OS_BITS_MASK 7
 
 struct fly_thread {
 	pthread_t				pthread;
@@ -47,6 +50,7 @@ struct fly_thread {
 
 	/* thread id given by the OS */
 	pid_t					tid;
+	int						fd;
 }; /* struct fly_thread */
 
 int fly_thread_init(struct fly_thread *thread,
@@ -55,5 +59,8 @@ int fly_thread_uninit(struct fly_thread *thread);
 int fly_thread_start(struct fly_thread *thread);
 
 int fly_thread_wait(struct fly_thread *thread);
+
+enum fly_thread_state fly_thread_get_state(struct fly_thread *thread);
+int fly_thread_is_client_block(struct fly_thread *thread);
 
 #endif /* FLY_THREAD_H */
