@@ -161,7 +161,7 @@ int fly_worker_wait(struct fly_worker *worker)
 
 void fly_worker_work_available(struct fly_worker *worker)
 {
-	if (fly_atomic_cmp(&worker->mainblocked, 1))
+	if (fly_atomic_and(&worker->mainblocked, 1))
 		fly_worker_thread_work_available(&worker->backupthread);
 	else
 		fly_worker_thread_work_available(&worker->mainthread);
