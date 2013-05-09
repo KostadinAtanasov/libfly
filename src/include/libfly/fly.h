@@ -38,7 +38,7 @@ void fly_set_free(fly_free_func func);
 /******************************************************************************
  * libfly initialization
  *****************************************************************************/
-int fly_simple_init(int half_nbt);
+int fly_simple_init(int nbworkers);
 int fly_uninit();
 
 

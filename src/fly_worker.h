@@ -26,7 +26,6 @@
 #include "fly_thread.h"
 #include "fly_sem.h"
 
-#include <pthread.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -36,17 +35,36 @@ typedef int fly_worker_state;
 #define FLY_WORKER_EXITING	2
 #define FLY_WORKER_FINISHED	3
 
-struct fly_worker {
-	fly_worker_state	tstate;
-	struct fly_thread	mainthread;
+#define FLY_WORKER_NB_THREADS	2
+
+struct fly_worker_thread {
+	struct fly_thread	thread;
 	struct fly_sem		sem;
+	struct fly_worker	*parent;
+	fly_worker_state	tstate;
+	int					active;
+}; /* struct fly_worker_thread */
+
+struct fly_worker {
+	struct fly_worker_thread	mainthread;
+	struct fly_worker_thread	backupthread;
+	int							mainblocked;
 }; /* fly_worker */
 
+/******************************************************************************
+ * fly_worker interface
+ *****************************************************************************/
 int fly_worker_init(struct fly_worker *worker);
 int fly_worker_uninit(struct fly_worker *worker);
 int fly_worker_start(struct fly_worker *worker);
 void fly_worker_request_exit(struct fly_worker *worker);
 int fly_worker_wait(struct fly_worker *worker);
+void fly_worker_work_available(struct fly_worker *worker);
+
+/******************************************************************************
+ * fly_worker_thread interface
+ *****************************************************************************/
+void fly_worker_thread_wait_work(struct fly_worker_thread *thread);
 
 static inline void fly_thread_sleep(unsigned int nanosec)
 {

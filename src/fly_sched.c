@@ -153,7 +153,7 @@ int fly_sched_add_job(struct fly_job *job)
 	if (FLY_SUCCEEDED(err)) {
 		int i;
 		for (i = 0; i < fly_sched.nbworkers; i++)
-			fly_sem_post(&fly_sched.workers[i].sem);
+			fly_worker_work_available(&fly_sched.workers[i]);
 	}
 	return err;
 }
@@ -251,31 +251,33 @@ static void fly_sched_move_to_done(struct fly_job *job)
 	fly_mrswlock_wunlock(&fly_sched.done_lock);
 }
 
-void fly_schedule(struct fly_worker *w)
+void fly_schedule(struct fly_worker_thread *wthread)
 {
 	/* TODO:
 	 * Locks are for very short time so consider spinning...
 	 */
-	struct fly_job *job = fly_sched_get_ready(&w->mainthread);
+	struct fly_thread *thread = &wthread->thread;
+	struct fly_worker *worker = wthread->parent;
+	struct fly_job *job = fly_sched_get_ready(thread);
 
 	if (job) {
 		if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
 				(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
 			int i;
-			fly_sched_move_to_running(job, &w->mainthread);
+			fly_sched_move_to_running(job, thread);
 			for (i = 0; i < fly_sched.nbworkers; i++) {
-				if (&fly_sched.workers[i] != w)
-					fly_sem_post(&fly_sched.workers[i].sem);
+				if (&fly_sched.workers[i] != worker)
+					fly_worker_work_available(worker);
 			}
 		} else if (job->jtype == FLY_TASK_TASK) {
 			/* prevents other threads to get this job as running */
 			job->batches_done = job->nbbatches;
-			fly_sched_move_to_running(job, &w->mainthread);
+			fly_sched_move_to_running(job, thread);
 		} else {
 			fly_assert(0, "fly_schedule unsupported job type");
 		}
 	} else {
-		job = fly_sched_get_running(&w->mainthread);
+		job = fly_sched_get_running(thread);
 	}
 
 	if (job) {
@@ -297,7 +299,7 @@ void fly_schedule(struct fly_worker *w)
 		return;
 	}
 
-	fly_sem_wait(&w->sem, &w->mainthread);
+	fly_worker_thread_wait_work(wthread);
 }
 
 /******************************************************************************

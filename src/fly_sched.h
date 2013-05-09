@@ -28,7 +28,7 @@
 #include "fly_list.h"
 
 /* Forwards */
-struct fly_worker;
+struct fly_worker_thread;
 struct fly_job;
 
 /*****************************************************************************
@@ -61,6 +61,6 @@ int fly_sched_uninit();
 int fly_sched_add_job(struct fly_job *job);
 int fly_sched_job_collected(struct fly_job *job);
 
-void fly_schedule(struct fly_worker *worker);
+void fly_schedule(struct fly_worker_thread *wthread);
 
 #endif /* FLY_SCHEDULER_H */

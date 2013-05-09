@@ -31,4 +31,7 @@
 #define fly_atomic_cas(ptr, desired, val) \
 	__sync_bool_compare_and_swap(ptr, desired, val)
 
+#define fly_atomic_cmp(ptr, val) \
+	__sync_and_and_fetch(ptr, val)
+
 #endif /* LIBFLY_FLY_ATOMIC_H */

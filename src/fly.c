@@ -61,11 +61,11 @@ void fly_default_free(void *ptr)
 	free(ptr);
 }
 
-int fly_simple_init(int half_nbt)
+int fly_simple_init(int nbworkers)
 {
 	fly_set_malloc(fly_default_malloc);
 	fly_set_free(fly_default_free);
-	fly_set_nbworkers(half_nbt);
+	fly_set_nbworkers(nbworkers);
 
 	fly_init_memdebug();
 
