@@ -269,7 +269,7 @@ void fly_schedule(struct fly_worker_thread *wthread)
 			fly_sched_move_to_running(job, thread);
 			for (i = 0; i < fly_sched.nbworkers; i++) {
 				if (&fly_sched.workers[i] != worker)
-					fly_worker_work_available(worker);
+					fly_worker_work_available(&fly_sched.workers[i]);
 			}
 		} else if (job->jtype == FLY_TASK_TASK) {
 			/* prevents other threads to get this job as running */
