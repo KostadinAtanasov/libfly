@@ -166,7 +166,7 @@ int fly_sched_job_collected(struct fly_job *job)
 	return FLYESUCCESS;
 }
 
-static void fly_pfarrj_exec(struct fly_job *job)
+static int fly_pfarrj_exec(struct fly_job *job)
 {
 	struct fly_job_batch *batch = fly_get_exec_batch(job);
 	if (batch) {
@@ -179,10 +179,12 @@ static void fly_pfarrj_exec(struct fly_job *job)
 			param += batch->job->elsize;
 		}
 		fly_atomic_inc(&job->batches_done, 1);
+		return 0;
 	}
+	return 1;
 }
 
-static void fly_pfptrj_exec(struct fly_job *job)
+static int fly_pfptrj_exec(struct fly_job *job)
 {
 	struct fly_job_batch *batch = fly_get_exec_batch(job);
 	if (batch) {
@@ -192,13 +194,16 @@ static void fly_pfptrj_exec(struct fly_job *job)
 			job->func.pfor(batch->start + i, job->data);
 		}
 		fly_atomic_inc(&job->batches_done, 1);
+		return 0;
 	}
+	return 1;
 }
 
-static void fly_taskjob_exec(struct fly_job *job)
+static int fly_taskjob_exec(struct fly_job *job)
 {
 	struct fly_task *task = job->data;
 	task->result = task->func(task->param);
+	return 0;
 }
 
 static struct fly_job *fly_sched_get_ready(struct fly_thread *t)
@@ -279,12 +284,16 @@ void fly_schedule(struct fly_worker_thread *wthread)
 
 	if (job) {
 		int nbbatches = job->nbbatches;
+		int shouldsleep;
 		if (job->jtype == FLY_TASK_PARALLEL_FOR) {
-			fly_pfptrj_exec(job);
+			shouldsleep = fly_pfptrj_exec(job);
 		} else if (job->jtype == FLY_TASK_PARALLEL_FOR_ARR) {
-			fly_pfarrj_exec(job);
+			shouldsleep = fly_pfarrj_exec(job);
 		} else if (job->jtype == FLY_TASK_TASK) {
-			fly_taskjob_exec(job);
+			shouldsleep = fly_taskjob_exec(job);
+		} else {
+			fly_assert(0, "[fly_sched] unsupported job type");
+			shouldsleep = 1;
 		}
 
 		if (fly_atomic_cas(&job->batches_done, nbbatches, nbbatches)) {
@@ -293,7 +302,8 @@ void fly_schedule(struct fly_worker_thread *wthread)
 			fly_sched_move_to_done(job);
 			fly_sem_post(&job->sem);
 		}
-		return;
+		if (!shouldsleep)
+			return;
 	}
 
 	fly_worker_thread_wait_work(wthread);
