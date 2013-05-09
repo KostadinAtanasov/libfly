@@ -256,57 +256,61 @@ static void fly_sched_move_to_done(struct fly_job *job)
 	fly_mrswlock_wunlock(&fly_sched.done_lock);
 }
 
-void fly_schedule(struct fly_worker_thread *wthread)
+static struct fly_job *fly_sched_get_job(struct fly_worker_thread *wthread)
 {
-	struct fly_thread *thread = &wthread->thread;
-	struct fly_worker *worker = wthread->parent;
-	struct fly_job *job = fly_sched_get_ready(thread);
-
+	struct fly_job *job = fly_sched_get_ready(&wthread->thread);
 	if (job) {
 		if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
 				(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
 			int i;
-			fly_sched_move_to_running(job, thread);
+			fly_sched_move_to_running(job, &wthread->thread);
 			for (i = 0; i < fly_sched.nbworkers; i++) {
-				if (&fly_sched.workers[i] != worker)
+				if (&fly_sched.workers[i] != wthread->parent)
 					fly_worker_work_available(&fly_sched.workers[i]);
 			}
 		} else if (job->jtype == FLY_TASK_TASK) {
 			/* prevents other threads to get this job as running */
 			job->batches_done = job->nbbatches;
-			fly_sched_move_to_running(job, thread);
+			fly_sched_move_to_running(job, &wthread->thread);
 		} else {
 			fly_assert(0, "fly_schedule unsupported job type");
 		}
 	} else {
-		job = fly_sched_get_running(thread);
+		job = fly_sched_get_running(&wthread->thread);
+	}
+	return job;
+}
+
+static int fly_sched_exec_job(struct fly_job *job)
+{
+	int shouldsleep;
+
+	int nbbatches = job->nbbatches;
+	if (job->jtype == FLY_TASK_PARALLEL_FOR) {
+		shouldsleep = fly_pfptrj_exec(job);
+	} else if (job->jtype == FLY_TASK_PARALLEL_FOR_ARR) {
+		shouldsleep = fly_pfarrj_exec(job);
+	} else if (job->jtype == FLY_TASK_TASK) {
+		shouldsleep = fly_taskjob_exec(job);
+	} else {
+		fly_assert(0, "[fly_sched] unsupported job type");
+		shouldsleep = 1;
 	}
 
-	if (job) {
-		int nbbatches = job->nbbatches;
-		int shouldsleep;
-		if (job->jtype == FLY_TASK_PARALLEL_FOR) {
-			shouldsleep = fly_pfptrj_exec(job);
-		} else if (job->jtype == FLY_TASK_PARALLEL_FOR_ARR) {
-			shouldsleep = fly_pfarrj_exec(job);
-		} else if (job->jtype == FLY_TASK_TASK) {
-			shouldsleep = fly_taskjob_exec(job);
-		} else {
-			fly_assert(0, "[fly_sched] unsupported job type");
-			shouldsleep = 1;
-		}
-
-		if (fly_atomic_cas(&job->batches_done, nbbatches, nbbatches)) {
-			job->state = FLY_JOB_DONE;
-			fly_sched_remove_running(job);
-			fly_sched_move_to_done(job);
-			fly_sem_post(&job->sem);
-		}
-		if (!shouldsleep)
-			return;
+	if (fly_atomic_cas(&job->batches_done, nbbatches, nbbatches)) {
+		job->state = FLY_JOB_DONE;
+		fly_sched_remove_running(job);
+		fly_sched_move_to_done(job);
+		fly_sem_post(&job->sem);
 	}
+	return shouldsleep;
+}
 
-	fly_worker_thread_wait_work(wthread);
+void fly_schedule(struct fly_worker_thread *wthread)
+{
+	struct fly_job *job = fly_sched_get_job(wthread);
+	if (!job || (fly_sched_exec_job(job) != 0))
+		fly_worker_thread_wait_work(wthread);
 }
 
 /******************************************************************************
