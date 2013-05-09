@@ -253,9 +253,6 @@ static void fly_sched_move_to_done(struct fly_job *job)
 
 void fly_schedule(struct fly_worker_thread *wthread)
 {
-	/* TODO:
-	 * Locks are for very short time so consider spinning...
-	 */
 	struct fly_thread *thread = &wthread->thread;
 	struct fly_worker *worker = wthread->parent;
 	struct fly_job *job = fly_sched_get_ready(thread);
