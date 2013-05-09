@@ -24,6 +24,7 @@
 
 #include <sys/types.h>
 #include <pthread.h>
+#include <time.h>
 
 typedef void *(*fly_thread_func)(void*);
 
@@ -62,5 +63,13 @@ int fly_thread_wait(struct fly_thread *thread);
 
 enum fly_thread_state fly_thread_get_state(struct fly_thread *thread);
 int fly_thread_is_client_block(struct fly_thread *thread);
+
+static inline void fly_thread_sleep(unsigned int nanosec)
+{
+	struct timespec delay;
+	delay.tv_sec = nanosec / 1000000000;
+	delay.tv_nsec = nanosec % 1000000000;
+	nanosleep(&delay, NULL);
+}
 
 #endif /* FLY_THREAD_H */

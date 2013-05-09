@@ -26,9 +26,6 @@
 #include "fly_thread.h"
 #include "fly_sem.h"
 
-#include <unistd.h>
-#include <time.h>
-
 typedef int fly_worker_state;
 #define FLY_WORKER_IDLE		0
 #define FLY_WORKER_RUNNING	1
@@ -65,13 +62,5 @@ void fly_worker_work_available(struct fly_worker *worker);
  * fly_worker_thread interface
  *****************************************************************************/
 void fly_worker_thread_wait_work(struct fly_worker_thread *thread);
-
-static inline void fly_thread_sleep(unsigned int nanosec)
-{
-	struct timespec delay;
-	delay.tv_sec = nanosec / 1000000000;
-	delay.tv_nsec = nanosec % 1000000000;
-	nanosleep(&delay, NULL);
-}
 
 #endif /* FLY_WORKER_H */
