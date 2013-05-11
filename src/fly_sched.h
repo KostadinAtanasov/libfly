@@ -28,8 +28,10 @@
 #include "fly_list.h"
 
 /* Forwards */
+struct fly_worker;
 struct fly_worker_thread;
 struct fly_job;
+struct fly_thread;
 
 /*****************************************************************************
  * Supported job/task types
@@ -50,6 +52,8 @@ struct fly_sched {
 	struct fly_mrswlock		ready_lock;
 	struct fly_mrswlock		running_lock;
 	struct fly_mrswlock		done_lock;
+
+	struct fly_thread		*thread;
 }; /* fly_sched */
 
 void fly_set_nbworkers(int nb);

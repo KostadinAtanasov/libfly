@@ -22,6 +22,7 @@
 #include <libfly/fly_debugging.h>
 #include "fly_sched.h"
 #include "fly_globals.h"
+#include "fly_thread.h"
 #include "fly_worker.h"
 #include "fly_job.h"
 #include "fly_task.h"
@@ -41,6 +42,19 @@ void fly_set_nbworkers(int nb)
 {
 	fly_sched.nbworkers = nb;
 }
+
+#define FLY_SCHED_UPDATE_INTERVAL_US	1000
+static void *fly_sched_thread_func(void *param)
+{
+	while (fly_sched.thread->state == FLY_THREAD_RUNNING) {
+		fly_thread_sleep(FLY_SCHED_UPDATE_INTERVAL_US);
+	}
+	return param;
+}
+
+/******************************************************************************
+ * Initialization helpers.
+ *****************************************************************************/
 
 int fly_sched_init()
 {
@@ -70,6 +84,34 @@ int fly_sched_init()
 			fly_list_init(&fly_sched.ready_jobs);
 			fly_list_init(&fly_sched.running_jobs);
 			fly_list_init(&fly_sched.done_jobs);
+
+			/* Init scheduler thread */
+			fly_sched.thread = fly_malloc(sizeof(struct fly_thread));
+			if (!fly_sched.thread) {
+				fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
+				for (i = 0; i < fly_sched.nbworkers; i++)
+					fly_worker_uninit(&fly_sched.workers[i]);
+				return FLYENORES;
+			}
+			err = fly_thread_init(fly_sched.thread, fly_sched_thread_func, &fly_sched);
+			if (!FLY_SUCCEEDED(err)) {
+				fly_free(fly_sched.thread);
+				fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
+				for (i = 0; i < fly_sched.nbworkers; i++)
+					fly_worker_uninit(&fly_sched.workers[i]);
+				return err;
+			}
+			err = fly_thread_start(fly_sched.thread);
+			if (!FLY_SUCCEEDED(err)) {
+				fly_thread_uninit(fly_sched.thread);
+				fly_free(fly_sched.thread);
+				fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
+				for (i = 0; i < fly_sched.nbworkers; i++)
+					fly_worker_uninit(&fly_sched.workers[i]);
+				return err;
+			}
+
+			/* Finish initialization */
 			fly_sched.initialized = 1;
 		} else {
 			fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
@@ -89,6 +131,14 @@ int fly_sched_uninit()
 {
 	int err = FLYESUCCESS;
 	int i;
+
+	/* Uninit scheduler thread */
+	if (fly_sched.thread) {
+		fly_sched.thread->state = FLY_THREAD_IDLE;
+		fly_thread_wait(fly_sched.thread);
+		fly_thread_uninit(fly_sched.thread);
+		fly_free(fly_sched.thread);
+	}
 
 	for (i = 0; i < fly_sched.nbworkers; i++)
 		fly_worker_request_exit(&fly_sched.workers[i]);
