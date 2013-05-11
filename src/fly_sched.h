@@ -40,6 +40,10 @@ struct fly_thread;
 #define FLY_TASK_PARALLEL_FOR_ARR	2
 #define FLY_TASK_TASK				3
 
+#define FLY_SCHED_THREAD_IDLE		0
+#define FLY_SCHED_THREAD_RUNNING	1
+#define FLY_SCHED_THREAD_STOPPING	2
+
 struct fly_sched {
 	struct fly_worker		*workers;
 	int						nbworkers;
@@ -54,6 +58,7 @@ struct fly_sched {
 	struct fly_mrswlock		done_lock;
 
 	struct fly_thread		*thread;
+	int						threadstate;
 }; /* fly_sched */
 
 void fly_set_nbworkers(int nb);
