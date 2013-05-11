@@ -26,7 +26,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <string.h> /* for sprintf */
+#include <stdio.h> /* for sprintf */
 
 #define FLY_PROCESS_MAX_NAME_LEN	256
 #define FLY_THREAD_DEFAULT_READ_LEN	512
