@@ -75,7 +75,6 @@ static void *fly_sched_thread_func(void *param)
 	while (fly_sched.threadstate == FLY_SCHED_THREAD_RUNNING) {
 		fly_thread_sleep(FLY_SCHED_UPDATE_INTERVAL_US);
 	}
-	fly_log("fly_sched_thread_func", "exiting");
 	return param;
 }
 
