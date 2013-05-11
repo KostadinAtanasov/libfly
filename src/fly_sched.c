@@ -29,7 +29,7 @@
 #include "fly_atomic.h"
 
 /******************************************************************************
- * init/uninit helper functions declarations
+ * Init/uninit helper functions declarations
  *****************************************************************************/
 #define FLY_SCHED_ONE_LOCKS		1
 #define FLY_SCHED_TWO_LOCKS		2
@@ -43,6 +43,26 @@ static inline int fly_sched_thread_init();
 static inline int fly_sched_thread_uninit();
 static inline int fly_sched_workers_init();
 static inline int fly_sched_workers_uninit(int nbworkers);
+
+/******************************************************************************
+ * Job helper functions declarations
+ *****************************************************************************/
+static inline int fly_sched_add_to_ready(struct fly_job *job);
+static int fly_sched_add_pfj(struct fly_job *job);
+static int fly_taskjob_exec(struct fly_job *job);
+static struct fly_job *fly_sched_get_ready(struct fly_thread *t);
+static struct fly_job *fly_sched_get_running(struct fly_thread *t);
+static void fly_sched_move_to_running(struct fly_job *job, struct fly_thread *t);
+static void fly_sched_remove_running(struct fly_job *job);
+static void fly_sched_move_to_done(struct fly_job *job);
+static struct fly_job *fly_sched_get_job(struct fly_worker_thread *wthread);
+static int fly_sched_exec_job(struct fly_job *job);
+
+/******************************************************************************
+ * Scheduling helper functions declarations
+ *****************************************************************************/
+static int fly_pfarrj_exec(struct fly_job *job);
+static int fly_pfptrj_exec(struct fly_job *job);
 
 /******************************************************************************
  * fly_sched thread
@@ -60,7 +80,7 @@ static void *fly_sched_thread_func(void *param)
 }
 
 /******************************************************************************
- * fly_sched init/uninit interface
+ * Init/uninit interface
  *****************************************************************************/
 void fly_set_nbworkers(int nb)
 {
@@ -73,21 +93,20 @@ int fly_sched_init()
 	fly_sched.initialized = 0;
 	fly_sched.thread = NULL;
 	err = fly_sched_init_locks();
-	if (!FLY_SUCCEEDED(err))
-		return err;
-	fly_sched_init_lists();
-	err = fly_sched_workers_init();
-	if (!FLY_SUCCEEDED(err)) {
-		fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
-		return err;
-	}
-	err = fly_sched_thread_init();
-	if (!FLY_SUCCEEDED(err)) {
-		fly_sched_workers_uninit(fly_sched.nbworkers);
-		fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
-		return err;
-	} else {
-		fly_sched.initialized = 1;
+	if (FLY_SUCCEEDED(err)) {
+		fly_sched_init_lists();
+		err = fly_sched_workers_init();
+		if (FLY_SUCCEEDED(err)) {
+			err = fly_sched_thread_init();
+			if (FLY_SUCCEEDED(err)) {
+				fly_sched.initialized = 1;
+			} else {
+				fly_sched_workers_uninit(fly_sched.nbworkers);
+				fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
+			}
+		} else {
+			fly_sched_uninit_locks(FLY_SCHED_TREE_LOCKS);
+		}
 	}
 	return err;
 }
@@ -103,30 +122,8 @@ int fly_sched_uninit()
 }
 
 /******************************************************************************
- * Add job implementations
+ * fly_sched job interface
  *****************************************************************************/
-static inline int fly_sched_add_to_ready(struct fly_job *job)
-{
-	int err;
-	fly_mrswlock_notrack_wlock(&fly_sched.ready_lock);
-	err = fly_list_append(&fly_sched.ready_jobs, job);
-	fly_mrswlock_wunlock(&fly_sched.ready_lock);
-	return err;
-}
-
-static int fly_sched_add_pfj(struct fly_job *job)
-{
-	int err = fly_make_batches(job, fly_sched.nbworkers);
-	if (FLY_SUCCEEDED(err)) {
-		err = fly_sched_add_to_ready(job);
-		if (!FLY_SUCCEEDED(err)) {
-			fly_destroy_batches(job);
-			return err;
-		}
-	}
-	return err;
-}
-
 int fly_sched_add_job(struct fly_job *job)
 {
 	int err = FLYENOIMP;
@@ -152,6 +149,177 @@ int fly_sched_job_collected(struct fly_job *job)
 	return FLYESUCCESS;
 }
 
+/******************************************************************************
+ * Scheduling interface
+ *****************************************************************************/
+void fly_schedule(struct fly_worker_thread *wthread)
+{
+	struct fly_job *job = fly_sched_get_job(wthread);
+	if (!job || (fly_sched_exec_job(job) != 0))
+		fly_worker_thread_wait_work(wthread);
+}
+
+/******************************************************************************
+ * Pirvate helpers implementations
+ *****************************************************************************/
+
+/******************************************************************************
+ * Init/uninit helper implementations
+ *****************************************************************************/
+static inline int fly_sched_init_locks()
+{
+	int err;
+	err = fly_mrswlock_init(&fly_sched.ready_lock, FLY_SCHED_MAX_RLOCK);
+	if (err == 0) {
+		err = fly_mrswlock_init(&fly_sched.running_lock, FLY_SCHED_MAX_RLOCK);
+		if (err == 0) {
+			err = fly_mrswlock_init(&fly_sched.done_lock,
+					FLY_SCHED_MAX_RLOCK);
+			if (err != 0) {
+				fly_sched_uninit_locks(FLY_SCHED_TWO_LOCKS);
+				err = FLYENORES;
+			}
+		} else {
+			fly_sched_uninit_locks(FLY_SCHED_ONE_LOCKS);
+			err = FLYENORES;
+		}
+	}
+	return err;
+}
+
+static inline void fly_sched_uninit_locks(int nb)
+{
+	if (nb >= FLY_SCHED_TREE_LOCKS)
+		fly_mrswlock_uninit(&fly_sched.done_lock);
+	if (nb >= FLY_SCHED_TWO_LOCKS)
+		fly_mrswlock_uninit(&fly_sched.running_lock);
+	if (nb >= FLY_SCHED_ONE_LOCKS)
+		fly_mrswlock_uninit(&fly_sched.ready_lock);
+}
+
+static inline void fly_sched_init_lists()
+{
+	fly_list_init(&fly_sched.ready_jobs);
+	fly_list_init(&fly_sched.running_jobs);
+	fly_list_init(&fly_sched.done_jobs);
+}
+
+static inline void fly_sched_uninit_lists()
+{
+	while (!fly_list_is_empty(&fly_sched.ready_jobs)) {
+		void *el = fly_list_tail(&fly_sched.ready_jobs)->el;
+		fly_list_remove(&fly_sched.ready_jobs, el);
+	}
+	while (!fly_list_is_empty(&fly_sched.running_jobs)) {
+		void *el = fly_list_tail(&fly_sched.running_jobs)->el;
+		fly_list_remove(&fly_sched.running_jobs, el);
+	}
+	while (!fly_list_is_empty(&fly_sched.done_jobs)) {
+		void *el = fly_list_tail(&fly_sched.done_jobs)->el;
+		fly_list_remove(&fly_sched.done_jobs, el);
+	}
+}
+
+static inline int fly_sched_thread_init()
+{
+	int err;
+	fly_sched.thread = fly_malloc(sizeof(struct fly_thread));
+	if (!fly_sched.thread)
+		return FLYENORES;
+	err = fly_thread_init(fly_sched.thread, fly_sched_thread_func, &fly_sched);
+	if (!FLY_SUCCEEDED(err)) {
+		fly_free(fly_sched.thread);
+		return err;
+	}
+	fly_sched.threadstate = FLY_SCHED_THREAD_IDLE;
+	err = fly_thread_start(fly_sched.thread);
+	if (!FLY_SUCCEEDED(err)) {
+		fly_thread_uninit(fly_sched.thread);
+		fly_free(fly_sched.thread);
+		fly_sched.thread = NULL;
+		return err;
+	}
+	while (fly_sched.threadstate != FLY_SCHED_THREAD_RUNNING)
+		fly_thread_sleep(1);
+	return err;
+}
+
+static inline int fly_sched_thread_uninit()
+{
+	int err = FLYESUCCESS;
+	if (fly_sched.thread) {
+		fly_sched.threadstate = FLY_SCHED_THREAD_STOPPING;
+		fly_thread_wait(fly_sched.thread);
+		err = fly_thread_uninit(fly_sched.thread);
+		fly_free(fly_sched.thread);
+	}
+	return err;
+}
+
+static inline int fly_sched_workers_init()
+{
+	int err = FLYESUCCESS;
+	int nbworkers = fly_sched.nbworkers;
+	fly_sched.workers = fly_malloc(sizeof(struct fly_worker) * nbworkers);
+	if (fly_sched.workers) {
+		int i;
+		for (i = 0; i < nbworkers; i++) {
+			err = fly_worker_init(&fly_sched.workers[i]);
+			if (!FLY_SUCCEEDED(err))
+				break;
+			err = fly_worker_start(&fly_sched.workers[i]);
+			if (!FLY_SUCCEEDED(err)) {
+				fly_worker_uninit(&fly_sched.workers[i]);
+				break;
+			}
+		}
+		if (i != nbworkers) {
+			fly_sched_workers_uninit(i);
+		}
+	} else {
+		err = FLYENORES;
+	}
+	return err;
+}
+
+static inline int fly_sched_workers_uninit(int nbworkers)
+{
+	int err = FLYESUCCESS;
+	int i;
+	for(i = 0; i < nbworkers; i++)
+		err |= fly_worker_uninit(&fly_sched.workers[i]);
+	fly_free(fly_sched.workers);
+	return err;
+}
+
+/******************************************************************************
+ * Job helper functions implementations
+ *****************************************************************************/
+static inline int fly_sched_add_to_ready(struct fly_job *job)
+{
+	int err;
+	fly_mrswlock_notrack_wlock(&fly_sched.ready_lock);
+	err = fly_list_append(&fly_sched.ready_jobs, job);
+	fly_mrswlock_wunlock(&fly_sched.ready_lock);
+	return err;
+}
+
+static int fly_sched_add_pfj(struct fly_job *job)
+{
+	int err = fly_make_batches(job, fly_sched.nbworkers);
+	if (FLY_SUCCEEDED(err)) {
+		err = fly_sched_add_to_ready(job);
+		if (!FLY_SUCCEEDED(err)) {
+			fly_destroy_batches(job);
+			return err;
+		}
+	}
+	return err;
+}
+
+/******************************************************************************
+ * Scheduling helper functions implementations
+ *****************************************************************************/
 static int fly_pfarrj_exec(struct fly_job *job)
 {
 	struct fly_job_batch *batch = fly_get_exec_batch(job);
@@ -290,140 +458,4 @@ static int fly_sched_exec_job(struct fly_job *job)
 		fly_sem_post(&job->sem);
 	}
 	return shouldsleep;
-}
-
-void fly_schedule(struct fly_worker_thread *wthread)
-{
-	struct fly_job *job = fly_sched_get_job(wthread);
-	if (!job || (fly_sched_exec_job(job) != 0))
-		fly_worker_thread_wait_work(wthread);
-}
-
-/******************************************************************************
- * init/uninit helpers implementations
- *****************************************************************************/
-static inline int fly_sched_init_locks()
-{
-	int err;
-	err = fly_mrswlock_init(&fly_sched.ready_lock, FLY_SCHED_MAX_RLOCK);
-	if (err == 0) {
-		err = fly_mrswlock_init(&fly_sched.running_lock, FLY_SCHED_MAX_RLOCK);
-		if (err == 0) {
-			err = fly_mrswlock_init(&fly_sched.done_lock,
-					FLY_SCHED_MAX_RLOCK);
-			if (err != 0) {
-				fly_sched_uninit_locks(FLY_SCHED_TWO_LOCKS);
-				err = FLYENORES;
-			}
-		} else {
-			fly_sched_uninit_locks(FLY_SCHED_ONE_LOCKS);
-			err = FLYENORES;
-		}
-	}
-	return err;
-}
-
-static inline void fly_sched_uninit_locks(int nb)
-{
-	if (nb >= FLY_SCHED_TREE_LOCKS)
-		fly_mrswlock_uninit(&fly_sched.done_lock);
-	if (nb >= FLY_SCHED_TWO_LOCKS)
-		fly_mrswlock_uninit(&fly_sched.running_lock);
-	if (nb >= FLY_SCHED_ONE_LOCKS)
-		fly_mrswlock_uninit(&fly_sched.ready_lock);
-}
-
-static inline void fly_sched_init_lists()
-{
-	fly_list_init(&fly_sched.ready_jobs);
-	fly_list_init(&fly_sched.running_jobs);
-	fly_list_init(&fly_sched.done_jobs);
-}
-
-static inline void fly_sched_uninit_lists()
-{
-	while (!fly_list_is_empty(&fly_sched.ready_jobs)) {
-		void *el = fly_list_tail(&fly_sched.ready_jobs)->el;
-		fly_list_remove(&fly_sched.ready_jobs, el);
-	}
-	while (!fly_list_is_empty(&fly_sched.running_jobs)) {
-		void *el = fly_list_tail(&fly_sched.running_jobs)->el;
-		fly_list_remove(&fly_sched.running_jobs, el);
-	}
-	while (!fly_list_is_empty(&fly_sched.done_jobs)) {
-		void *el = fly_list_tail(&fly_sched.done_jobs)->el;
-		fly_list_remove(&fly_sched.done_jobs, el);
-	}
-}
-
-static inline int fly_sched_thread_init()
-{
-	int err;
-	fly_sched.thread = fly_malloc(sizeof(struct fly_thread));
-	if (!fly_sched.thread)
-		return FLYENORES;
-	err = fly_thread_init(fly_sched.thread, fly_sched_thread_func, &fly_sched);
-	if (!FLY_SUCCEEDED(err)) {
-		fly_free(fly_sched.thread);
-		return err;
-	}
-	fly_sched.threadstate = FLY_SCHED_THREAD_IDLE;
-	err = fly_thread_start(fly_sched.thread);
-	if (!FLY_SUCCEEDED(err)) {
-		fly_thread_uninit(fly_sched.thread);
-		fly_free(fly_sched.thread);
-		fly_sched.thread = NULL;
-		return err;
-	}
-	while (fly_sched.threadstate != FLY_SCHED_THREAD_RUNNING)
-		fly_thread_sleep(1);
-	return err;
-}
-
-static inline int fly_sched_thread_uninit()
-{
-	int err = FLYESUCCESS;
-	if (fly_sched.thread) {
-		fly_sched.threadstate = FLY_SCHED_THREAD_STOPPING;
-		fly_thread_wait(fly_sched.thread);
-		err = fly_thread_uninit(fly_sched.thread);
-		fly_free(fly_sched.thread);
-	}
-	return err;
-}
-
-static inline int fly_sched_workers_init()
-{
-	int err;
-	int nbworkers = fly_sched.nbworkers;
-	fly_sched.workers = fly_malloc(sizeof(struct fly_worker) * nbworkers);
-	if (fly_sched.workers) {
-		int i;
-		for (i = 0; i < nbworkers; i++) {
-			err = fly_worker_init(&fly_sched.workers[i]);
-			if (!FLY_SUCCEEDED(err))
-				break;
-			err = fly_worker_start(&fly_sched.workers[i]);
-			if (!FLY_SUCCEEDED(err)) {
-				fly_worker_uninit(&fly_sched.workers[i]);
-				break;
-			}
-		}
-		if (i != nbworkers) {
-			fly_sched_workers_uninit(i);
-		}
-	} else {
-		err = FLYENORES;
-	}
-	return err;
-}
-
-static inline int fly_sched_workers_uninit(int nbworkers)
-{
-	int err = FLYESUCCESS;
-	int i;
-	for(i = 0; i < nbworkers; i++)
-		err |= fly_worker_uninit(&fly_sched.workers[i]);
-	fly_free(fly_sched.workers);
-	return err;
 }
