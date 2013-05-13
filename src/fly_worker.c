@@ -106,17 +106,18 @@ int fly_worker_init(struct fly_worker *worker)
 	int err = FLYESUCCESS;
 	memset(worker, 0, sizeof(struct fly_worker));
 
-	worker->mainblocked = 0;
+	worker->mblocked = 0;
+	worker->bblocked = 0;
 
-	worker->mainthread.parent = worker;
-	err = fly_worker_thread_init(&worker->mainthread);
+	worker->mthread.parent = worker;
+	err = fly_worker_thread_init(&worker->mthread);
 	if (!FLY_SUCCEEDED(err))
 		return err;
 
-	worker->backupthread.parent = worker;
-	err = fly_worker_thread_init(&worker->backupthread);
+	worker->bthread.parent = worker;
+	err = fly_worker_thread_init(&worker->bthread);
 	if (!FLY_SUCCEEDED(err)) {
-		fly_worker_thread_uninit(&worker->mainthread);
+		fly_worker_thread_uninit(&worker->mthread);
 	}
 
 	return err;
@@ -128,8 +129,8 @@ int fly_worker_uninit(struct fly_worker *worker)
 	fly_worker_request_exit(worker);
 	err = fly_worker_wait(worker);
 	if (FLY_SUCCEEDED(err)) {
-		fly_worker_thread_uninit(&worker->mainthread);
-		fly_worker_thread_uninit(&worker->backupthread);
+		fly_worker_thread_uninit(&worker->mthread);
+		fly_worker_thread_uninit(&worker->bthread);
 	}
 	return err;
 }
@@ -137,9 +138,9 @@ int fly_worker_uninit(struct fly_worker *worker)
 int fly_worker_start(struct fly_worker *worker)
 {
 	int ret;
-	ret = fly_worker_thread_start(&worker->mainthread);
+	ret = fly_worker_thread_start(&worker->mthread);
 	if (FLY_SUCCEEDED(ret)) {
-		ret = fly_worker_thread_start(&worker->backupthread);
+		ret = fly_worker_thread_start(&worker->bthread);
 		if (!FLY_SUCCEEDED(ret)) {
 		}
 	}
@@ -148,21 +149,29 @@ int fly_worker_start(struct fly_worker *worker)
 
 void fly_worker_request_exit(struct fly_worker *worker)
 {
-	fly_worker_thread_request_exit(&worker->mainthread);
-	fly_worker_thread_request_exit(&worker->backupthread);
+	fly_worker_thread_request_exit(&worker->mthread);
+	fly_worker_thread_request_exit(&worker->bthread);
 }
 
 int fly_worker_wait(struct fly_worker *worker)
 {
-	int err = fly_worker_thread_wait(&worker->mainthread);
-	err |= fly_worker_thread_wait(&worker->backupthread);
+	int err = fly_worker_thread_wait(&worker->mthread);
+	err |= fly_worker_thread_wait(&worker->bthread);
 	return err;
 }
 
 void fly_worker_work_available(struct fly_worker *worker)
 {
-	if (fly_atomic_and(&worker->mainblocked, 1))
-		fly_worker_thread_work_available(&worker->backupthread);
-	else
-		fly_worker_thread_work_available(&worker->mainthread);
+	if (fly_atomic_and(&worker->mblocked, 1)
+		&& !fly_atomic_and(&worker->bblocked, 1)) {
+		fly_worker_thread_work_available(&worker->bthread);
+	} else {
+		fly_worker_thread_work_available(&worker->mthread);
+	}
+}
+
+void fly_worker_update(struct fly_worker *worker)
+{
+	worker->mblocked = fly_thread_is_client_block(&worker->mthread.thread);
+	worker->bblocked = fly_thread_is_client_block(&worker->bthread.thread);
 }

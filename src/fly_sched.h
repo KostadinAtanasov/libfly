@@ -71,5 +71,6 @@ int fly_sched_add_job(struct fly_job *job);
 int fly_sched_job_collected(struct fly_job *job);
 
 void fly_schedule(struct fly_worker_thread *wthread);
+void fly_sched_update();
 
 #endif /* FLY_SCHEDULER_H */

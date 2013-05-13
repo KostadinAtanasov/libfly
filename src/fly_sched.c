@@ -73,6 +73,7 @@ static void *fly_sched_thread_func(void *param)
 	fly_sched.threadstate = FLY_SCHED_THREAD_RUNNING;
 
 	while (fly_sched.threadstate == FLY_SCHED_THREAD_RUNNING) {
+		fly_sched_update();
 		fly_thread_sleep(FLY_SCHED_UPDATE_INTERVAL_US);
 	}
 	return param;
@@ -156,6 +157,13 @@ void fly_schedule(struct fly_worker_thread *wthread)
 	struct fly_job *job = fly_sched_get_job(wthread);
 	if (!job || (fly_sched_exec_job(job) != 0))
 		fly_worker_thread_wait_work(wthread);
+}
+
+void fly_sched_update()
+{
+	int i;
+	for (i = 0; i < fly_sched.nbworkers; i++)
+		fly_worker_update(&fly_sched.workers[i]);
 }
 
 /******************************************************************************

@@ -43,9 +43,10 @@ struct fly_worker_thread {
 }; /* struct fly_worker_thread */
 
 struct fly_worker {
-	struct fly_worker_thread	mainthread;
-	struct fly_worker_thread	backupthread;
-	int							mainblocked;
+	struct fly_worker_thread	mthread;
+	struct fly_worker_thread	bthread;
+	int							mblocked;
+	int							bblocked;
 }; /* fly_worker */
 
 /******************************************************************************
@@ -57,6 +58,7 @@ int fly_worker_start(struct fly_worker *worker);
 void fly_worker_request_exit(struct fly_worker *worker);
 int fly_worker_wait(struct fly_worker *worker);
 void fly_worker_work_available(struct fly_worker *worker);
+void fly_worker_update(struct fly_worker *worker);
 
 /******************************************************************************
  * fly_worker_thread interface
