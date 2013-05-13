@@ -24,9 +24,9 @@
 
 #include <libfly/fly.h>
 #include "fly_list.h"
+#include "fly_sem.h"
 
 #include <stdlib.h>
-#include <semaphore.h>
 
 enum fly_job_state {
 	FLY_JOB_IDLE,
@@ -52,7 +52,7 @@ struct fly_job {
 	int					end;
 	int					jtype;
 	enum fly_job_state	state;
-	sem_t				sem;
+	struct fly_sem		sem;
 }; /* struct fly_job */
 
 struct fly_job_batch {

@@ -29,6 +29,8 @@
 #ifndef LIBFLY_FLY_MRSWLOCK_H
 #define LIBFLY_FLY_MRSWLOCK_H
 
+#include "fly_thread.h"
+
 #include <pthread.h>
 #include <semaphore.h>
 
@@ -61,14 +63,14 @@ static inline void fly_mrswlock_uninit(struct fly_mrswlock *lock)
 	sem_destroy(&lock->wsem);
 }
 
-static inline int fly_mrswlock_rlock(struct fly_mrswlock *lock)
+static inline int fly_mrswlock_notrack_rlock(struct fly_mrswlock *lock)
 {
 	int hasit = 0;
 	int waiting = 0;
 	int wakewriters = 0;
 	while (!hasit) {
 		pthread_mutex_lock(&lock->plock);
-		if (lock->nbin < lock->maxin) {
+		if ((lock->nbin < lock->maxin) && !wakewriters) {
 			if (lock->nbwwaiting == 0) {
 				lock->nbin++;
 				hasit = 1;
@@ -95,7 +97,7 @@ static inline int fly_mrswlock_rlock(struct fly_mrswlock *lock)
 	return hasit;
 }
 
-static inline int fly_mrswlock_wlock(struct fly_mrswlock *lock)
+static inline int fly_mrswlock_notrack_wlock(struct fly_mrswlock *lock)
 {
 	int hasit = 0;
 	int waiting = 0;
@@ -117,6 +119,26 @@ static inline int fly_mrswlock_wlock(struct fly_mrswlock *lock)
 		}
 	}
 	return hasit;
+}
+
+static inline int fly_mrswlock_rlock(struct fly_mrswlock *lock,
+		struct fly_thread *thread)
+{
+	int ret;
+	thread->state = FLY_THREAD_SLEEP;
+	ret = fly_mrswlock_notrack_rlock(lock);
+	thread->state = FLY_THREAD_RUNNING;
+	return ret;
+}
+
+static inline int fly_mrswlock_wlock(struct fly_mrswlock *lock,
+		struct fly_thread *thread)
+{
+	int ret;
+	thread->state = FLY_THREAD_SLEEP;
+	ret = fly_mrswlock_notrack_wlock(lock);
+	thread->state = FLY_THREAD_RUNNING;
+	return ret;
 }
 
 static inline int fly_mrswlock_runlock(struct fly_mrswlock *lock)

@@ -23,14 +23,15 @@
 #define FLY_SCHEDULER_H
 
 #include <libfly/fly_error.h>
-#include <libfly/fly_mrswlock.h>
 
+#include "fly_mrswlock.h"
 #include "fly_list.h"
 
 /* Forwards */
 struct fly_worker;
-struct fly_wq;
+struct fly_worker_thread;
 struct fly_job;
+struct fly_thread;
 
 /*****************************************************************************
  * Supported job/task types
@@ -38,6 +39,10 @@ struct fly_job;
 #define FLY_TASK_PARALLEL_FOR		1
 #define FLY_TASK_PARALLEL_FOR_ARR	2
 #define FLY_TASK_TASK				3
+
+#define FLY_SCHED_THREAD_IDLE		0
+#define FLY_SCHED_THREAD_RUNNING	1
+#define FLY_SCHED_THREAD_STOPPING	2
 
 struct fly_sched {
 	struct fly_worker		*workers;
@@ -51,6 +56,9 @@ struct fly_sched {
 	struct fly_mrswlock		ready_lock;
 	struct fly_mrswlock		running_lock;
 	struct fly_mrswlock		done_lock;
+
+	struct fly_thread		*thread;
+	int						threadstate;
 }; /* fly_sched */
 
 void fly_set_nbworkers(int nb);
@@ -62,6 +70,7 @@ int fly_sched_uninit();
 int fly_sched_add_job(struct fly_job *job);
 int fly_sched_job_collected(struct fly_job *job);
 
-void fly_schedule(struct fly_worker *worker);
+void fly_schedule(struct fly_worker_thread *wthread);
+void fly_sched_update();
 
 #endif /* FLY_SCHEDULER_H */

@@ -1,5 +1,5 @@
 /******************************************************************************
- * fly_atomic.h
+ * fly_sem.h
  *
  * Copyright (C) 2013 Kostadin Atanasov <pranayama111@gmail.com>
  *
@@ -19,19 +19,44 @@
  * along with libfly. If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#ifndef	LIBFLY_FLY_ATOMIC_H
-#define LIBFLY_FLY_ATOMIC_H
+#ifndef LIBFLY_FLY_SEM_H
+#define LIBFLY_FLY_SEM_H
 
-#define fly_atomic_inc(ptr, val) \
-	__sync_add_and_fetch(ptr, val)
+#include "fly_thread.h"
 
-#define fly_atomic_dec(ptr, val) \
-	__sync_sub_and_fetch(ptr, val);
+#include <semaphore.h>
 
-#define fly_atomic_cas(ptr, desired, val) \
-	__sync_bool_compare_and_swap(ptr, desired, val)
+struct fly_sem {
+	sem_t	sem;
+}; /* struct fly_sem */
 
-#define fly_atomic_and(ptr, val) \
-	__sync_and_and_fetch(ptr, val)
+static inline int fly_sem_init(struct fly_sem *sem)
+{
+	return sem_init(&sem->sem, 0, 0);
+}
 
-#endif /* LIBFLY_FLY_ATOMIC_H */
+static inline int fly_sem_uninit(struct fly_sem *sem)
+{
+	return sem_destroy(&sem->sem);
+}
+
+static inline int fly_sem_wait(struct fly_sem *sem, struct fly_thread *thread)
+{
+	int err;
+	thread->state = FLY_THREAD_SLEEP;
+	err = sem_wait(&sem->sem);
+	thread->state = FLY_THREAD_RUNNING;
+	return err;
+}
+
+static inline int fly_sem_notrack_wait(struct fly_sem *sem)
+{
+	return sem_wait(&sem->sem);
+}
+
+static inline int fly_sem_post(struct fly_sem *sem)
+{
+	return sem_post(&sem->sem);
+}
+
+#endif /* LIBFLY_FLY_SEM_H */

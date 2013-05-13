@@ -23,76 +23,114 @@
 #include "fly_globals.h"
 #include "fly_worker.h"
 #include "fly_sched.h"
+#include "fly_atomic.h"
 
-#include <string.h>
+#include <string.h> /* for memset */
 
 #define FLY_WORKER_STATE_WAIT_NANOSEC 1000
 
-void* fly_worker_func(void *worker)
+/******************************************************************************
+ * fly_worker_thread interface
+ *****************************************************************************/
+inline void fly_worker_thread_wait_work(struct fly_worker_thread *thread)
 {
-	struct fly_worker *w = (struct fly_worker*)worker;
-	while (w->tstate != FLY_WORKER_RUNNING)
-		fly_thread_sleep(FLY_WORKER_STATE_WAIT_NANOSEC);
-
-	while (w->tstate == FLY_WORKER_RUNNING) {
-		fly_schedule(w);
-	}
-
-	w->tstate = FLY_WORKER_FINISHED;
-	return w;
+	fly_sem_wait(&thread->sem, &thread->thread);
 }
 
+/******************************************************************************
+ * fly_worker_thread private interface
+ *****************************************************************************/
+void* fly_worker_thread_func(void *wthread)
+{
+	struct fly_worker_thread *wt = (struct fly_worker_thread*)wthread;
+	while (wt->tstate != FLY_WORKER_RUNNING)
+		fly_thread_sleep(FLY_WORKER_STATE_WAIT_NANOSEC);
+
+	while (wt->tstate == FLY_WORKER_RUNNING) {
+		fly_schedule(wt);
+	}
+
+	wt->tstate = FLY_WORKER_FINISHED;
+	return wt;
+}
+
+static inline void fly_worker_thread_work_available(struct fly_worker_thread *t)
+{
+	fly_sem_post(&t->sem);
+}
+
+static inline int fly_worker_thread_init(struct fly_worker_thread *thread)
+{
+	int err = FLYESUCCESS;
+	err = fly_thread_init(&thread->thread, fly_worker_thread_func, thread);
+	if (!FLY_SUCCEEDED(err))
+		return err;
+	err = fly_sem_init(&thread->sem);
+	if (!FLY_SUCCEEDED(err)) {
+		fly_thread_uninit(&thread->thread);
+	}
+	thread->tstate = FLY_WORKER_IDLE;
+	return err;
+}
+
+static inline void fly_worker_thread_uninit(struct fly_worker_thread *thread)
+{
+	fly_thread_uninit(&thread->thread);
+	fly_sem_uninit(&thread->sem);
+}
+
+static inline int fly_worker_thread_start(struct fly_worker_thread *thread)
+{
+	int ret = fly_thread_start(&thread->thread);
+	if (FLY_SUCCEEDED(ret))
+		thread->tstate = FLY_WORKER_RUNNING;
+	return ret;
+}
+
+static inline int fly_worker_thread_request_exit(struct fly_worker_thread *thread)
+{
+	thread->tstate = FLY_WORKER_EXITING;
+	return fly_sem_post(&thread->sem);
+}
+
+static inline int fly_worker_thread_wait(struct fly_worker_thread *thread)
+{
+	return fly_thread_wait(&thread->thread);
+}
+
+/******************************************************************************
+ * fly_worker interface
+ *****************************************************************************/
 int fly_worker_init(struct fly_worker *worker)
 {
 	int err = FLYESUCCESS;
-
 	memset(worker, 0, sizeof(struct fly_worker));
 
-	worker->attr = fly_malloc(sizeof(pthread_attr_t));
-	if (!worker->attr) {
-		err = FLYENORES;
-		goto OnError;
-	}
+	worker->mblocked = 0;
+	worker->bblocked = 0;
 
-	if (pthread_attr_init(worker->attr) != 0) {
-		err = FLYEATTR;
-		goto OnError;
-	}
+	worker->mthread.parent = worker;
+	err = fly_worker_thread_init(&worker->mthread);
+	if (!FLY_SUCCEEDED(err))
+		return err;
 
-	err = sem_init(&worker->sem, 0, 0);
-	if (err) {
-		err = FLYENORES;
-		goto OnError;
+	worker->bthread.parent = worker;
+	err = fly_worker_thread_init(&worker->bthread);
+	if (!FLY_SUCCEEDED(err)) {
+		fly_worker_thread_uninit(&worker->mthread);
 	}
-
-	worker->tstate = FLY_WORKER_IDLE;
-	worker->task = NULL;
 
 	return err;
-	OnError:
-		if (worker->attr) {
-			pthread_attr_destroy(worker->attr);
-			fly_free(worker->attr);
-			worker->attr = NULL;
-		}
-		return err;
 }
 
 int fly_worker_uninit(struct fly_worker *worker)
 {
 	int err = FLYESUCCESS;
-
-	if (worker->tstate == FLY_WORKER_RUNNING) {
-		fly_worker_request_exit(worker);
-		err = fly_worker_wait(worker);
-	}
-
+	fly_worker_request_exit(worker);
+	err = fly_worker_wait(worker);
 	if (FLY_SUCCEEDED(err)) {
-		if (worker->attr) {
-			pthread_attr_destroy(worker->attr);
-			fly_free(worker->attr);
-		}
-		sem_destroy(&worker->sem);
+		fly_worker_thread_uninit(&worker->mthread);
+		fly_worker_thread_uninit(&worker->bthread);
 	}
 	return err;
 }
@@ -100,21 +138,40 @@ int fly_worker_uninit(struct fly_worker *worker)
 int fly_worker_start(struct fly_worker *worker)
 {
 	int ret;
-	ret = pthread_create(&worker->pthread, worker->attr,
-		fly_worker_func, worker);
-	if (ret == 0)
-		worker->tstate = FLY_WORKER_RUNNING;
+	ret = fly_worker_thread_start(&worker->mthread);
+	if (FLY_SUCCEEDED(ret)) {
+		ret = fly_worker_thread_start(&worker->bthread);
+		if (!FLY_SUCCEEDED(ret)) {
+		}
+	}
 	return ret;
 }
 
 void fly_worker_request_exit(struct fly_worker *worker)
 {
-	worker->tstate = FLY_WORKER_EXITING;
-	sem_post(&worker->sem);
+	fly_worker_thread_request_exit(&worker->mthread);
+	fly_worker_thread_request_exit(&worker->bthread);
 }
 
 int fly_worker_wait(struct fly_worker *worker)
 {
-	pthread_join(worker->pthread, NULL);
-	return FLYESUCCESS;
+	int err = fly_worker_thread_wait(&worker->mthread);
+	err |= fly_worker_thread_wait(&worker->bthread);
+	return err;
+}
+
+void fly_worker_work_available(struct fly_worker *worker)
+{
+	if (fly_atomic_and(&worker->mblocked, 1)
+		&& !fly_atomic_and(&worker->bblocked, 1)) {
+		fly_worker_thread_work_available(&worker->bthread);
+	} else {
+		fly_worker_thread_work_available(&worker->mthread);
+	}
+}
+
+void fly_worker_update(struct fly_worker *worker)
+{
+	worker->mblocked = fly_thread_is_client_block(&worker->mthread.thread);
+	worker->bblocked = fly_thread_is_client_block(&worker->bthread.thread);
 }

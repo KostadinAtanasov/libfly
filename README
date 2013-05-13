@@ -24,4 +24,12 @@ Supported parallel patterns:
 	int fly_wait_task(struct fly_task *task);
 	Wait previously pushed task to finish.
 
+	int fly_wait_tasks(struct fly_task **tasks, int nbtasks);
+	Wait every task in the array tasks to finish.
+
 	void *fly_get_task_result(struct fly_task *task);
+
+How to build:
+
+	libfly uses cmake as build system. The easyest way to build it
+	is to simply execute one of build-* files in the root directory.
