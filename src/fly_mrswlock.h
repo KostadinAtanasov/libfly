@@ -70,7 +70,7 @@ static inline int fly_mrswlock_notrack_rlock(struct fly_mrswlock *lock)
 	int wakewriters = 0;
 	while (!hasit) {
 		pthread_mutex_lock(&lock->plock);
-		if (lock->nbin < lock->maxin) {
+		if ((lock->nbin < lock->maxin) && !wakewriters) {
 			if (lock->nbwwaiting == 0) {
 				lock->nbin++;
 				hasit = 1;
