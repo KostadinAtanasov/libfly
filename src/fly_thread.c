@@ -32,8 +32,7 @@
 #define FLY_THREAD_DEFAULT_READ_LEN	512
 #define FLY_INVALID_FD				-1
 
-/* Since we are using it only here... */
-static pid_t	fly_threads_pid = 0;
+#define FLY_PROCFS_STATUS_FMT_STR	"/proc/self/task/%d/status"
 
 /******************************************************************************
  * Proc file system parsing.
@@ -53,7 +52,7 @@ static void *fly_thread_wrap_func(void *_thread)
 	thread->tid = syscall(SYS_gettid);
 	thread->state = FLY_THREAD_RUNNING;
 
-	sprintf(path, "/proc/%d/task/%d/status", fly_threads_pid, thread->tid);
+	sprintf(path, FLY_PROCFS_STATUS_FMT_STR, thread->tid);
 	thread->fd = open(path, O_RDONLY);
 
 	return thread->func(thread->param);
@@ -62,9 +61,6 @@ static void *fly_thread_wrap_func(void *_thread)
 int fly_thread_init(struct fly_thread *thread,
 		fly_thread_func func, void *param)
 {
-	if (fly_threads_pid == 0)
-		fly_threads_pid = getpid();
-
 	thread->attr = fly_malloc(sizeof(pthread_attr_t));
 	if (thread->attr) {
 		if (pthread_attr_init(thread->attr) == 0) {
