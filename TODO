@@ -6,7 +6,7 @@
 	backup threads just sleep, only if main threads are blocked backups
 	get to run).
 
-[ ] Add shared library target to the cmake.
+[*] Add shared library target to the cmake.
 
 [ ] Put all fly_sched list inner allocations in preallocated place.
 
