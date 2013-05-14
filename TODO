@@ -2,11 +2,11 @@
 
 [*] Simple tasks support.
 
-[ ] Have backup threads(instead of number of cores double that, but the
+[*] Have backup threads(instead of number of cores double that, but the
 	backup threads just sleep, only if main threads are blocked backups
 	get to run).
 
-[ ] Add shared library target to the cmake.
+[*] Add shared library target to the cmake.
 
 [ ] Put all fly_sched list inner allocations in preallocated place.
 
