@@ -49,6 +49,7 @@ struct fly_job *fly_create_job_pfor(int count, fly_parallel_for_func func,
 			job->batches_done = 0;
 			job->func.pfor = func;
 			job->jtype = FLY_TASK_PARALLEL_FOR;
+			job->recurse = 0;
 		} else {
 			fly_free(job);
 			job = NULL;
@@ -75,6 +76,7 @@ struct fly_job *fly_create_job_pfarr(int start, int end,
 				job->batches_done = 0;
 				job->func.pfor = func;
 				job->jtype = FLY_TASK_PARALLEL_FOR_ARR;
+				job->recurse = 0;
 			} else {
 				fly_free(job);
 				job = NULL;
@@ -96,6 +98,7 @@ struct fly_job *fly_create_job_task(struct fly_task *task)
 			job->nbbatches = 1;
 			job->batches_done = 0;
 			job->jtype = FLY_TASK_TASK;
+			job->recurse = 0;
 		} else {
 			fly_free(job);
 			job = NULL;
@@ -130,6 +133,13 @@ int fly_wait_job(struct fly_job *job)
 		return FLYESUCCESS;
 	}
 	return FLYELLLIB;
+}
+
+int fly_job_is_done(struct fly_job *job)
+{
+	if (fly_atomic_cas(&job->batches_done, job->nbbatches, job->nbbatches))
+		return 1;
+	return 0;
 }
 
 int fly_make_batches(struct fly_job *job, int nbbatches)

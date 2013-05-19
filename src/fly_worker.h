@@ -59,10 +59,12 @@ void fly_worker_request_exit(struct fly_worker *worker);
 int fly_worker_wait(struct fly_worker *worker);
 void fly_worker_work_available(struct fly_worker *worker);
 void fly_worker_update(struct fly_worker *worker);
+struct fly_worker_thread *fly_worker_get_curr_thread(struct fly_worker *worker);
 
 /******************************************************************************
  * fly_worker_thread interface
  *****************************************************************************/
 void fly_worker_thread_wait_work(struct fly_worker_thread *thread);
+int fly_worker_thread_is_me(struct fly_worker_thread *thread);
 
 #endif /* FLY_WORKER_H */

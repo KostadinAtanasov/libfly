@@ -118,6 +118,11 @@ int fly_thread_is_client_block(struct fly_thread *thread)
 	return 0;
 }
 
+int fly_thread_is_me(struct fly_thread *thread)
+{
+	return pthread_equal(pthread_self(), thread->pthread);
+}
+
 /******************************************************************************
  * Proc file system parsing.
  *****************************************************************************/

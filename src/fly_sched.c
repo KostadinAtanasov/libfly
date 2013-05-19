@@ -130,13 +130,31 @@ int fly_sched_add_job(struct fly_job *job)
 	if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
 			(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
 		err = fly_sched_add_pfj(job);
-	} else if(job->jtype == FLY_TASK_TASK) {
-		err = fly_sched_add_to_ready(job);
+	} else if (job->jtype == FLY_TASK_TASK) {
+			err = fly_sched_add_to_ready(job);
 	}
 	if (FLY_SUCCEEDED(err)) {
 		int i;
 		for (i = 0; i < fly_sched.nbworkers; i++)
 			fly_worker_work_available(&fly_sched.workers[i]);
+	}
+	return err;
+}
+
+int fly_sched_add_job_from_worker(struct fly_job *job,
+		struct fly_worker_thread *wthread)
+{
+	int err = FLYESUCCESS;
+	if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
+			(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
+		int i;
+		fly_sched_move_to_running(job, &wthread->thread);
+		for (i = 0; i < fly_sched.nbworkers; i++) {
+			if (&fly_sched.workers[i] != wthread->parent)
+				fly_worker_work_available(&fly_sched.workers[i]);
+		}
+	} else if (job->jtype == FLY_TASK_TASK) {
+		err = fly_sched_add_to_ready(job);
 	}
 	return err;
 }
@@ -159,11 +177,31 @@ void fly_schedule(struct fly_worker_thread *wthread)
 		fly_worker_thread_wait_work(wthread);
 }
 
+void fly_schedule_for_job(struct fly_worker_thread *wt, struct fly_job *job)
+{
+	fly_assert(job->recurse > 0, "fly_schedule_for_job requires recursive job");
+	fly_assert(job->jtype != FLY_TASK_TASK,
+			"fly_schedule_for_job does not support FLY_TASK_TASK jobs");
+	fly_sched_exec_job(job);
+}
+
 void fly_sched_update()
 {
 	int i;
 	for (i = 0; i < fly_sched.nbworkers; i++)
 		fly_worker_update(&fly_sched.workers[i]);
+}
+
+struct fly_worker_thread *fly_sched_get_wthread()
+{
+	int i;
+	for (i = 0; i < fly_sched.nbworkers; i++) {
+		struct fly_worker_thread *thread;
+		thread = fly_worker_get_curr_thread(&fly_sched.workers[i]);
+		if (thread)
+			return thread;
+	}
+	return NULL;
 }
 
 /******************************************************************************
@@ -293,7 +331,7 @@ static inline int fly_sched_workers_uninit(int nbworkers)
 {
 	int err = FLYESUCCESS;
 	int i;
-	for(i = 0; i < nbworkers; i++)
+	for (i = 0; i < nbworkers; i++)
 		err |= fly_worker_uninit(&fly_sched.workers[i]);
 	fly_free(fly_sched.workers);
 	return err;
@@ -316,10 +354,8 @@ static int fly_sched_add_pfj(struct fly_job *job)
 	int err = fly_make_batches(job, fly_sched.nbworkers);
 	if (FLY_SUCCEEDED(err)) {
 		err = fly_sched_add_to_ready(job);
-		if (!FLY_SUCCEEDED(err)) {
+		if (!FLY_SUCCEEDED(err))
 			fly_destroy_batches(job);
-			return err;
-		}
 	}
 	return err;
 }
@@ -446,7 +482,6 @@ static int fly_sched_exec_job(struct fly_job *job)
 {
 	int shouldsleep;
 
-	int nbbatches = job->nbbatches;
 	if (job->jtype == FLY_TASK_PARALLEL_FOR) {
 		shouldsleep = fly_pfptrj_exec(job);
 	} else if (job->jtype == FLY_TASK_PARALLEL_FOR_ARR) {
@@ -458,7 +493,7 @@ static int fly_sched_exec_job(struct fly_job *job)
 		shouldsleep = 1;
 	}
 
-	if (fly_atomic_cas(&job->batches_done, nbbatches, nbbatches)) {
+	if (fly_job_is_done(job)) {
 		job->state = FLY_JOB_DONE;
 		fly_sched_remove_running(job);
 		fly_sched_move_to_done(job);

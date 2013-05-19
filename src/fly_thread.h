@@ -63,6 +63,7 @@ int fly_thread_wait(struct fly_thread *thread);
 
 enum fly_thread_state fly_thread_get_state(struct fly_thread *thread);
 int fly_thread_is_client_block(struct fly_thread *thread);
+int fly_thread_is_me(struct fly_thread *thread);
 
 static inline void fly_thread_sleep(unsigned int nanosec)
 {
