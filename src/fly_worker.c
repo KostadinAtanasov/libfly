@@ -37,6 +37,11 @@ inline void fly_worker_thread_wait_work(struct fly_worker_thread *thread)
 	fly_sem_wait(&thread->sem, &thread->thread);
 }
 
+int fly_worker_thread_is_me(struct fly_worker_thread *thread)
+{
+	return fly_thread_is_me(&thread->thread);
+}
+
 /******************************************************************************
  * fly_worker_thread private interface
  *****************************************************************************/
@@ -174,4 +179,13 @@ void fly_worker_update(struct fly_worker *worker)
 {
 	worker->mblocked = fly_thread_is_client_block(&worker->mthread.thread);
 	worker->bblocked = fly_thread_is_client_block(&worker->bthread.thread);
+}
+
+struct fly_worker_thread *fly_worker_get_curr_thread(struct fly_worker *worker)
+{
+	if (fly_worker_thread_is_me(&worker->mthread))
+		return &worker->mthread;
+	if (fly_worker_thread_is_me(&worker->bthread))
+		return &worker->bthread;
+	return NULL;
 }

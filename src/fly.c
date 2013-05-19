@@ -82,6 +82,31 @@ int fly_uninit()
 }
 
 /******************************************************************************
+ * Common helper for adding jobs.
+ *****************************************************************************/
+static int fly_add_job_and_wait(struct fly_job *job, int wait)
+{
+	int err;
+	struct fly_worker_thread *wthread = fly_sched_get_wthread();
+	if (wthread) {
+		job->recurse++;
+		err = fly_sched_add_job_from_worker(job, wthread);
+	} else {
+		err = fly_sched_add_job(job);
+	}
+	if (FLY_SUCCEEDED(err)) {
+		if (wait) {
+			if (job->recurse > 0) {
+				while (!fly_job_is_done(job))
+					fly_schedule_for_job(wthread, job);
+			}
+			err = fly_wait_job(job);
+		}
+	}
+	return err;
+}
+
+/******************************************************************************
  * Parallel for parallelism
  *****************************************************************************/
 int fly_parallel_for(int count, fly_parallel_for_func func, void *ptr)
@@ -89,9 +114,7 @@ int fly_parallel_for(int count, fly_parallel_for_func func, void *ptr)
 	int err = FLYENORES;
 	struct fly_job *job = fly_create_job_pfor(count, func, ptr);
 	if (job) {
-		err = fly_sched_add_job(job);
-		if (FLY_SUCCEEDED(err))
-			err = fly_wait_job(job);
+		err = fly_add_job_and_wait(job, 1);
 		fly_destroy_job(job);
 	}
 	return err;
@@ -103,9 +126,7 @@ int fly_parallel_for_arr(int start, int end, fly_parallel_for_func func,
 	int err = FLYENORES;
 	struct fly_job *job = fly_create_job_pfarr(start, end, func, arr, elsize);
 	if (job) {
-		err = fly_sched_add_job(job);
-		if (FLY_SUCCEEDED(err))
-			err = fly_wait_job(job);
+		err = fly_add_job_and_wait(job, 1);
 		fly_destroy_job(job);
 	}
 	return err;
@@ -134,11 +155,9 @@ int fly_push_task(struct fly_task *task)
 	struct fly_job *job = fly_create_job_task(task);
 	if (job) {
 		task->sched_data = job;
-		err = fly_sched_add_job(job);
-		if (!FLY_SUCCEEDED(err)) {
-			task->sched_data = NULL;
+		err = fly_add_job_and_wait(job, 0);
+		if (!FLY_SUCCEEDED(err))
 			fly_destroy_job(job);
-		}
 	}
 	return err;
 }

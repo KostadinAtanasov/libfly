@@ -51,6 +51,7 @@ struct fly_job {
 	int					start;
 	int					end;
 	int					jtype;
+	int					recurse;
 	enum fly_job_state	state;
 	struct fly_sem		sem;
 }; /* struct fly_job */
@@ -69,6 +70,7 @@ struct fly_job *fly_create_job_pfarr(int start, int end,
 struct fly_job *fly_create_job_task(struct fly_task *task);
 void fly_destroy_job(struct fly_job *job);
 int fly_wait_job(struct fly_job *job);
+int fly_job_is_done(struct fly_job *job);
 int fly_make_batches(struct fly_job *job, int nbbatches);
 void fly_destroy_batches(struct fly_job *job);
 struct fly_job_batch *fly_get_exec_batch(struct fly_job *job);
