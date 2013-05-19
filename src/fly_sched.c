@@ -148,10 +148,16 @@ int fly_sched_add_job_from_worker(struct fly_job *job,
 	if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
 			(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
 		int i;
-		fly_sched_move_to_running(job, &wthread->thread);
-		for (i = 0; i < fly_sched.nbworkers; i++) {
-			if (&fly_sched.workers[i] != wthread->parent)
-				fly_worker_work_available(&fly_sched.workers[i]);
+		err = fly_make_batches(job, fly_sched.nbworkers);
+		if (FLY_SUCCEEDED(err)) {
+			fly_sched_move_to_running(job, &wthread->thread);
+			for (i = 0; i < fly_sched.nbworkers; i++) {
+				if (&fly_sched.workers[i] != wthread->parent)
+					fly_worker_work_available(&fly_sched.workers[i]);
+			}
+		} else {
+			if (!FLY_SUCCEEDED(err))
+				fly_destroy_batches(job);
 		}
 	} else if (job->jtype == FLY_TASK_TASK) {
 		err = fly_sched_add_to_ready(job);
