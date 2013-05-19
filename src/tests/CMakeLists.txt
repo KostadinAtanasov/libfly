@@ -6,6 +6,7 @@ set(fly_tests_SRCS
 	test_init.c
 	test_parallel_for.c
 	test_push_task.c
+	test_recurse.c
 	)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -46,3 +47,6 @@ target_link_libraries(test_parallel_for fly m)
 
 add_executable(test_push_task test_push_task.c)
 target_link_libraries(test_push_task fly m)
+
+add_executable(test_recurse test_recurse.c)
+target_link_libraries(test_recurse fly m)

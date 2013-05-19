@@ -10,4 +10,4 @@
 
 [ ] Put all fly_sched list inner allocations in preallocated place.
 
-[ ] Allow recursive parallel_for and parallel_for from tasks.
+[*] Allow recursive parallel_for and parallel_for from tasks.
