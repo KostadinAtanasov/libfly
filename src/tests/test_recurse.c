@@ -21,6 +21,7 @@
 
 #include <libfly/fly.h>
 
+#include <stdlib.h> /* for malloc */
 #include <math.h> /* for log validation */
 #include <stdio.h> /* for sprintf */
 #include <unistd.h> /* for sysconf */
@@ -45,7 +46,8 @@ static inline double get_time_diff_in_usec(double prevtime)
  * End of profiling stuff
  *****************************************************************************/
 
-#define NBTASKS			256
+#define NBTASKS			16
+#define TASKARRSIZE		16
 #define LOG_LOOP_SIZE	5000000
 #define LOG_PRECISION	0.001f
 
@@ -64,21 +66,41 @@ static float nat_log(float num)
 
 struct task_param {
 	float	*arr;
+	float	*res;
 	int		size;
 }; /* struct task_param */
+
+static void parallel_for_func(int ind, void *ptr)
+{
+	struct task_param *tp = (struct task_param*)ptr;
+	tp->res[ind] = nat_log(tp->arr[ind]);
+}
 
 static void *task_func(void *param)
 {
 	struct task_param *tp = (struct task_param*)param;
-	tp->res = nat_log(tp->num);
+	fly_parallel_for(tp->size, parallel_for_func, tp);
 	return tp;
 }
 
-static void init_data(struct task_param *arr, int count)
+static void init_data(struct task_param *arr, int nbtasks, int taskarrsize)
 {
 	int i;
-	for (i = 0; i < count; i++)
-		arr[i].num = (float)i + 0.5f;
+	for (i = 0; i < nbtasks; i++) {
+		int j;
+		arr[i].size = taskarrsize;
+		arr[i].arr = malloc(sizeof(float) * taskarrsize);
+		arr[i].res = malloc(sizeof(float) * taskarrsize);
+		for (j = 0; j < taskarrsize; j++)
+			arr[i].arr[j] = (float)i + 0.5f;
+	}
+}
+
+static void uninit_data(struct task_param *arr, int nbtasks)
+{
+	int i;
+	for (i = 0; i < nbtasks; i++)
+		free(arr[i].arr);
 }
 
 static void clean_tasks(struct fly_task **tasks, int count)
@@ -102,13 +124,16 @@ static int validate_log(struct task_param *param, int count)
 	int i;
 	int err = 0;
 	for (i = 0; i < count; i++) {
-		float mathlog = log(param[i].num);
-		if (!eq_with_eps(param[i].res, mathlog, LOG_PRECISION)) {
-			char msg[256] = {0};
-			sprintf(msg, "bad log ad index: %d; nat_log %f; mat log %f",
-					i, param[i].res, mathlog);
-			fly_log("[test_push_task]", msg);
-			err = 1;
+		int j;
+		for (j = 0; j < TASKARRSIZE; j++) {
+			float mathlog = log(param[i].arr[j]);
+			if (!eq_with_eps(param[i].res[j], mathlog, LOG_PRECISION)) {
+				char msg[256] = {0};
+				sprintf(msg, "bad log ad index: %d; nat_log %f; mat log %f",
+						i, param[i].res[j], mathlog);
+				fly_log("[test_recurse]", msg);
+				err = 1;
+			}
 		}
 	}
 	return !err;
@@ -127,7 +152,7 @@ int main(int argc, char **argv)
 	struct fly_task		*tasks[NBTASKS];
 	struct task_param	task_params[NBTASKS];
 
-	init_data(task_params, NBTASKS);
+	init_data(task_params, NBTASKS, TASKARRSIZE);
 
 	nbcpus = sysconf(_SC_NPROCESSORS_ONLN);
 	if (nbcpus < 0)
@@ -145,6 +170,7 @@ int main(int argc, char **argv)
 			clean_tasks(tasks, counter);
 			fly_assert(0, "fly_create_task failed");
 			fly_uninit();
+			uninit_data(task_params, NBTASKS);
 			return -1;
 		}
 	}
@@ -156,6 +182,7 @@ int main(int argc, char **argv)
 			clean_tasks(tasks, NBTASKS);
 			fly_assert(0, "fly_push_task failed");
 			fly_uninit();
+			uninit_data(task_params, NBTASKS);
 			return -1;
 
 		}
@@ -164,29 +191,33 @@ int main(int argc, char **argv)
 	errcode = fly_wait_tasks(tasks, NBTASKS);
 	timedelta = get_time_diff_in_usec(timestart);
 	sprintf(msg, "tasks execution took:\t\t%f us", timedelta);
-	fly_log("[test_push_task]", msg);
+	fly_log("[test_recurse]", msg);
 	(void)errcode;
 	fly_assert(FLY_SUCCEEDED(errcode), "flay_wait_tasks return error");
 	clean_tasks(tasks, NBTASKS);
 
 	validate_log(task_params, NBTASKS);
-	/* TODO: test and waiting for single task e.g. fly_wait_task */
 
 	olddelta = timedelta;
 	timestart = get_time_in_usec();
 	for (counter = 0; counter < NBTASKS; counter++) {
-		task_func(&task_params[counter]);
+		int j;
+		for (j = 0; j < TASKARRSIZE; j++) {
+			parallel_for_func(j, &task_params[counter]);
+		}
 	}
 	timedelta = get_time_diff_in_usec(timestart);
 	sprintf(msg, "for loop execution took:\t%f us", timedelta);
-	fly_log("[test_push_task]", msg);
+	fly_log("[test_recurse]", msg);
 	sprintf(msg, "speed bump:\t\t\t%f", timedelta / olddelta);
-	fly_log("[test_push_task]", msg);
+	fly_log("[test_recurse]", msg);
 
 	/* shutdown libfly */
 	errcode = fly_uninit();
 	(void)errcode;
 	fly_assert(FLY_SUCCEEDED(errcode), "fly_uninit failed");
+
+	uninit_data(task_params, NBTASKS);
 
 	return 0;
 }
