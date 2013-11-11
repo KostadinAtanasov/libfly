@@ -66,7 +66,7 @@ static inline void fly_worker_thread_work_available(struct fly_worker_thread *t)
 
 static inline int fly_worker_thread_init(struct fly_worker_thread *thread)
 {
-	int err = FLYESUCCESS;
+	int err;
 	err = fly_thread_init(&thread->thread, fly_worker_thread_func, thread);
 	if (!FLY_SUCCEEDED(err))
 		return err;
@@ -108,7 +108,7 @@ static inline int fly_worker_thread_wait(struct fly_worker_thread *thread)
  *****************************************************************************/
 int fly_worker_init(struct fly_worker *worker)
 {
-	int err = FLYESUCCESS;
+	int err;
 	memset(worker, 0, sizeof(struct fly_worker));
 
 	worker->mblocked = 0;
@@ -130,7 +130,7 @@ int fly_worker_init(struct fly_worker *worker)
 
 int fly_worker_uninit(struct fly_worker *worker)
 {
-	int err = FLYESUCCESS;
+	int err;
 	fly_worker_request_exit(worker);
 	err = fly_worker_wait(worker);
 	if (FLY_SUCCEEDED(err)) {

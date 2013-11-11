@@ -147,9 +147,9 @@ int fly_sched_add_job_from_worker(struct fly_job *job,
 	int err = FLYESUCCESS;
 	if ((job->jtype == FLY_TASK_PARALLEL_FOR) ||
 			(job->jtype == FLY_TASK_PARALLEL_FOR_ARR)) {
-		int i;
 		err = fly_make_batches(job, fly_sched.nbworkers);
 		if (FLY_SUCCEEDED(err)) {
+			int i;
 			fly_sched_move_to_running(job, &wthread->thread);
 			for (i = 0; i < fly_sched.nbworkers; i++) {
 				if (&fly_sched.workers[i] != wthread->parent)
@@ -375,7 +375,8 @@ static int fly_pfarrj_exec(struct fly_job *job)
 	if (batch) {
 		int i;
 		int count = batch->end - batch->start;
-		char *param = batch->job->data + (batch->start * batch->job->elsize);
+		char *data = (char*)batch->job->data;
+		char *param = data + (batch->start * batch->job->elsize);
 
 		for (i = 0; i < count; i++) {
 			job->func.pfor(batch->start + i, param);
